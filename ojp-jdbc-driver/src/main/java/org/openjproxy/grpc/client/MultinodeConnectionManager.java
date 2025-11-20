@@ -214,12 +214,6 @@ public class MultinodeConnectionManager {
                 if (validateServer(endpoint)) {
                     log.info("Server {} has recovered", endpoint.getAddress());
                     
-                    // Invalidate XA sessions bound to recovered server
-                    // This prevents "Connection not found" errors when server loses session state
-                    if (xaConnectionRedistributor != null) {
-                        invalidateXASessionsForServer(endpoint);
-                    }
-                    
                     endpoint.markHealthy();
                     recoveredServers.add(endpoint);
                     notifyServerRecovered(endpoint);
@@ -231,89 +225,187 @@ public class MultinodeConnectionManager {
             }
         }
         
-        // If any servers recovered, trigger connection redistribution
-        if (!recoveredServers.isEmpty() && healthCheckConfig.isRedistributionEnabled()) {
-            log.info("Triggering connection redistribution for {} recovered server(s)", 
-                    recoveredServers.size());
+        // If any servers recovered and XA mode is enabled, rebalance connections
+        // Calculate how many connections need to be redistributed and invalidate them
+        // in a balanced manner across healthy servers
+        if (!recoveredServers.isEmpty() && xaConnectionRedistributor != null && 
+            healthCheckConfig.isRedistributionEnabled()) {
             
-            List<ServerEndpoint> allHealthyServers = serverEndpoints.stream()
-                    .filter(ServerEndpoint::isHealthy)
-                    .collect(Collectors.toList());
-            
-            try {
-                connectionRedistributor.rebalance(recoveredServers, allHealthyServers);
-            } catch (Exception e) {
-                log.error("Failed to redistribute connections after server recovery: {}", 
-                        e.getMessage(), e);
-            }
+            rebalanceConnectionsAfterRecovery(recoveredServers);
         }
     }
     
     /**
-     * Invalidates all XA sessions bound to a recovered server.
+     * Rebalances connections after server recovery in XA mode.
      * 
-     * When a server is killed and resurrected, it loses all session state (sessions are stored 
-     * in-memory). However, client-side session bindings persist. This causes "Connection not found" 
-     * errors when queries are sent with old session UUIDs that don't exist on the resurrected server.
+     * When a server recovers, we need to rebalance the connection pool:
+     * 1. Calculate total current connections across all healthy servers
+     * 2. Calculate target connections per server: totalConnections / totalHealthyServers
+     * 3. Invalidate (targetPerServer) connections evenly across existing healthy servers
+     * 4. Connection pools will automatically replace invalid connections and spread across all servers
      * 
-     * This method:
-     * 1. Clears client-side session bindings for the recovered server
-     * 2. Marks actual Connection objects as invalid so connection pools will discard them
-     * 3. Forces connection pools to create new connections with fresh sessions
+     * Example: 3 servers with 10 connections each → 1 server fails → 2 servers adapt to 15 each
+     * → Server recovers → Total 30 connections / 3 servers = 10 per server
+     * → Invalidate 5 connections from each of the 2 healthy servers
+     * → Pools create 10 new connections distributed evenly across all 3 servers
      * 
-     * Only affects XA mode - non-XA mode doesn't maintain session bindings in sessionToServerMap.
-     * 
-     * @param endpoint The server endpoint that has recovered
+     * @param recoveredServers The list of servers that have recovered
      */
-    private void invalidateXASessionsForServer(ServerEndpoint endpoint) {
-        // Step 1: Invalidate session bindings in sessionToServerMap
+    private void rebalanceConnectionsAfterRecovery(List<ServerEndpoint> recoveredServers) {
+        List<ServerEndpoint> allHealthyServers = serverEndpoints.stream()
+                .filter(ServerEndpoint::isHealthy)
+                .collect(Collectors.toList());
+        
+        log.info("Rebalancing connections after recovery of {} server(s). Total healthy servers: {}", 
+                recoveredServers.size(), allHealthyServers.size());
+        
+        // Get current connection distribution
+        Map<ServerEndpoint, List<java.sql.Connection>> distribution = connectionTracker.getDistribution();
+        
+        // Calculate total connections currently open
+        int totalConnections = distribution.values().stream()
+                .mapToInt(List::size)
+                .sum();
+        
+        if (totalConnections == 0) {
+            log.info("No connections currently open, skipping rebalancing");
+            return;
+        }
+        
+        // Calculate target connections per server
+        int targetPerServer = totalConnections / allHealthyServers.size();
+        int totalToInvalidate = totalConnections - (targetPerServer * allHealthyServers.size());
+        
+        if (totalToInvalidate <= 0) {
+            log.info("No connection rebalancing needed (target per server: {})", targetPerServer);
+            return;
+        }
+        
+        log.info("Rebalancing: {} total connections, {} healthy servers, {} target per server, {} connections to invalidate",
+                totalConnections, allHealthyServers.size(), targetPerServer, totalToInvalidate);
+        
+        // Get servers that were healthy before recovery (exclude newly recovered servers)
+        List<ServerEndpoint> serversToInvalidateFrom = allHealthyServers.stream()
+                .filter(server -> !recoveredServers.contains(server))
+                .collect(Collectors.toList());
+        
+        if (serversToInvalidateFrom.isEmpty()) {
+            log.warn("No servers available to invalidate connections from");
+            return;
+        }
+        
+        // Distribute invalidations evenly across healthy servers (excluding recovered ones)
+        int perServer = totalToInvalidate / serversToInvalidateFrom.size();
+        int remainder = totalToInvalidate % serversToInvalidateFrom.size();
+        
+        int totalInvalidated = 0;
+        for (int i = 0; i < serversToInvalidateFrom.size(); i++) {
+            ServerEndpoint server = serversToInvalidateFrom.get(i);
+            int toInvalidate = perServer + (i < remainder ? 1 : 0);
+            
+            List<java.sql.Connection> connections = distribution.get(server);
+            if (connections == null || connections.isEmpty()) {
+                log.warn("No connections found for server {} during rebalancing", server.getAddress());
+                continue;
+            }
+            
+            int invalidated = invalidateConnectionsForServer(server, connections, toInvalidate);
+            totalInvalidated += invalidated;
+        }
+        
+        log.info("Rebalancing complete: invalidated {} connections across {} servers. " +
+                "Connection pools will create new connections distributed evenly across all healthy servers.",
+                totalInvalidated, serversToInvalidateFrom.size());
+    }
+    
+    /**
+     * Invalidates a specified number of connections for a server.
+     * 
+     * @param server The server whose connections should be invalidated
+     * @param connections The list of connections for this server
+     * @param count The number of connections to invalidate
+     * @return The actual number of connections invalidated
+     */
+    private int invalidateConnectionsForServer(ServerEndpoint server, List<java.sql.Connection> connections, int count) {
+        int invalidated = 0;
+        int toInvalidate = Math.min(count, connections.size());
+        
+        for (int i = 0; i < toInvalidate; i++) {
+            java.sql.Connection conn = connections.get(i);
+            if (conn instanceof org.openjproxy.jdbc.Connection) {
+                org.openjproxy.jdbc.Connection ojpConn = (org.openjproxy.jdbc.Connection) conn;
+                ojpConn.markForceInvalid();
+                try {
+                    conn.close();
+                    invalidated++;
+                    log.debug("Invalidated and closed connection {} for server {} during rebalancing", 
+                            System.identityHashCode(conn), server.getAddress());
+                } catch (Exception e) {
+                    log.warn("Failed to close connection {} for server {} during rebalancing: {}", 
+                            System.identityHashCode(conn), server.getAddress(), e.getMessage());
+                }
+            }
+        }
+        
+        log.info("Invalidated {} of {} connections for server {} during rebalancing", 
+                invalidated, toInvalidate, server.getAddress());
+        return invalidated;
+    }
+    
+    /**
+     * Invalidates all XA sessions and connections for a server that has become unhealthy.
+     * 
+     * In XA mode, when a server fails, we immediately:
+     * 1. Clear client-side session bindings from sessionToServerMap
+     * 2. Mark Connection objects as invalid (forceInvalid) so pools discard them
+     * 3. Close connections to force pool replacement
+     * 
+     * This prevents attempts to use stale sessions on the failed server. When the server
+     * recovers, new connections will be created with fresh sessions.
+     * 
+     * @param endpoint The server endpoint that has failed
+     */
+    private void invalidateSessionsAndConnectionsForFailedServer(ServerEndpoint endpoint) {
+        log.info("Invalidating all XA sessions and connections for failed server {}", endpoint.getAddress());
+        
+        // Step 1: Remove all session bindings for this server
         List<String> sessionsToInvalidate = sessionToServerMap.entrySet().stream()
                 .filter(entry -> entry.getValue().equals(endpoint))
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toList());
         
-        if (!sessionsToInvalidate.isEmpty()) {
-            log.info("Invalidating {} XA session binding(s) for recovered server {}", 
-                    sessionsToInvalidate.size(), endpoint.getAddress());
-            
-            for (String sessionUUID : sessionsToInvalidate) {
-                sessionToServerMap.remove(sessionUUID);
-                log.debug("Invalidated XA session binding {} for recovered server {}", 
-                        sessionUUID, endpoint.getAddress());
-            }
+        for (String sessionUUID : sessionsToInvalidate) {
+            sessionToServerMap.remove(sessionUUID);
+            log.debug("Removed session binding {} for failed server {}", sessionUUID, endpoint.getAddress());
         }
         
-        // Step 2: Mark actual Connection objects as invalid
-        // This is critical - without this, existing connections in the pool will still try
-        // to use old session UUIDs, causing "Connection not found" errors
+        // Step 2: Mark all connections for this server as invalid and close them
         Map<ServerEndpoint, List<java.sql.Connection>> distribution = connectionTracker.getDistribution();
         List<java.sql.Connection> connectionsToInvalidate = distribution.get(endpoint);
         
         if (connectionsToInvalidate != null && !connectionsToInvalidate.isEmpty()) {
-            log.info("Marking {} XA connection object(s) as invalid for recovered server {}", 
-                    connectionsToInvalidate.size(), endpoint.getAddress());
-            
-            int markedCount = 0;
+            int invalidatedCount = 0;
             for (java.sql.Connection conn : connectionsToInvalidate) {
                 if (conn instanceof org.openjproxy.jdbc.Connection) {
-                    ((org.openjproxy.jdbc.Connection) conn).markForceInvalid();
-                    markedCount++;
-                    log.debug("Marked XA connection {} as invalid", System.identityHashCode(conn));
+                    org.openjproxy.jdbc.Connection ojpConn = (org.openjproxy.jdbc.Connection) conn;
+                    ojpConn.markForceInvalid();
+                    try {
+                        conn.close();
+                        invalidatedCount++;
+                        log.debug("Invalidated and closed connection {} for failed server {}", 
+                                System.identityHashCode(conn), endpoint.getAddress());
+                    } catch (Exception e) {
+                        log.warn("Failed to close connection {} for failed server {}: {}", 
+                                System.identityHashCode(conn), endpoint.getAddress(), e.getMessage());
+                    }
                 }
             }
             
-            log.info("Marked {} XA connection(s) as invalid for recovered server {}. " +
-                    "Connection pools will detect and replace them.", 
-                    markedCount, endpoint.getAddress());
+            log.info("Invalidated {} session(s) and {} connection(s) for failed server {}",
+                    sessionsToInvalidate.size(), invalidatedCount, endpoint.getAddress());
         } else {
-            log.debug("No XA connections tracked for recovered server {}", endpoint.getAddress());
-        }
-        
-        if (sessionsToInvalidate.isEmpty() && (connectionsToInvalidate == null || connectionsToInvalidate.isEmpty())) {
-            log.debug("No sessions or connections bound to recovered server {}", endpoint.getAddress());
-        } else {
-            log.info("XA session invalidation complete for server {}. Connection pools will create new connections with fresh sessions.", 
-                    endpoint.getAddress());
+            log.info("Invalidated {} session(s) for failed server {} (no connections tracked)",
+                    sessionsToInvalidate.size(), endpoint.getAddress());
         }
     }
     
@@ -424,14 +516,8 @@ public class MultinodeConnectionManager {
                         sessionInfo.getSessionUUID(), connectedServerAddress, 
                         targetServer != null ? targetServer : "NULL");
                 
-                // Check if this session is already bound - if so, don't rebind to avoid re-adding invalidated sessions
-                boolean sessionAlreadyBound = sessionToServerMap.containsKey(sessionInfo.getSessionUUID());
-                
-                if (sessionAlreadyBound) {
-                    log.warn("DIAGNOSTIC XA: Session {} is already bound. Skipping bind to prevent re-adding invalidated session. " +
-                            "This typically happens during query execution with a pooled connection.", 
-                            sessionInfo.getSessionUUID());
-                } else if (targetServer != null && !targetServer.isEmpty()) {
+                // Bind the session to the target server from the response
+                if (targetServer != null && !targetServer.isEmpty()) {
                     bindSession(sessionInfo.getSessionUUID(), targetServer);
                     if (!targetServer.equals(connectedServerAddress)) {
                         log.warn("DIAGNOSTIC XA: Session {} bound to targetServer {} which DIFFERS from connected server {}. " +
@@ -802,6 +888,12 @@ public class MultinodeConnectionManager {
         log.warn("Marked server {} as unhealthy due to connection-level error: {}", 
                 endpoint.getAddress(), exception.getMessage());
         
+        // XA Mode: Immediately invalidate all sessions and connections for the failed server
+        // This prevents attempts to use stale sessions after server failure
+        if (xaConnectionRedistributor != null) {
+            invalidateSessionsAndConnectionsForFailedServer(endpoint);
+        }
+        
         // Phase 2: Notify listeners that server became unhealthy
         notifyServerUnhealthy(endpoint, exception);
         
@@ -864,12 +956,6 @@ public class MultinodeConnectionManager {
                 try {
                     log.debug("Attempting to recover server {}", endpoint.getAddress());
                     createChannelAndStub(endpoint);
-                    
-                    // Invalidate XA sessions bound to recovered server
-                    // This prevents "Connection not found" errors when server loses session state
-                    if (xaConnectionRedistributor != null) {
-                        invalidateXASessionsForServer(endpoint);
-                    }
                     
                     endpoint.setHealthy(true);
                     endpoint.setLastFailureTime(0);
