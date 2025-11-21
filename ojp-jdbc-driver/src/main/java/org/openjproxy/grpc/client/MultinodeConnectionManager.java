@@ -195,9 +195,11 @@ public class MultinodeConnectionManager {
         
         // XA Mode: Proactively check healthy servers to detect failures early
         // This ensures sessions are invalidated even if no active operations are hitting the server
+        // Only validate servers that have been successfully connected to at least once
         if (xaConnectionRedistributor != null) {
             List<ServerEndpoint> healthyServers = serverEndpoints.stream()
                     .filter(ServerEndpoint::isHealthy)
+                    .filter(endpoint -> endpoint.getLastFailureTime() > 0)  // Skip never-connected servers
                     .collect(Collectors.toList());
             
             for (ServerEndpoint endpoint : healthyServers) {
