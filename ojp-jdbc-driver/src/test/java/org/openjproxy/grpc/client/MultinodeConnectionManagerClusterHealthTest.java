@@ -32,11 +32,10 @@ class MultinodeConnectionManagerClusterHealthTest {
             new ServerEndpoint("server3", 1059)
         );
         
+        MultinodeConnectionManager manager = new MultinodeConnectionManager(endpoints);
         // Mark server2 as unhealthy
         endpoints.get(1).setHealthy(false);
-        
-        MultinodeConnectionManager manager = new MultinodeConnectionManager(endpoints);
-        
+
         String clusterHealth = manager.generateClusterHealth();
         
         assertEquals("server1:1059(UP);server2:1059(DOWN);server3:1059(UP)", clusterHealth);
@@ -49,11 +48,10 @@ class MultinodeConnectionManagerClusterHealthTest {
             new ServerEndpoint("server2", 1059)
         );
         
+        MultinodeConnectionManager manager = new MultinodeConnectionManager(endpoints);
         endpoints.get(0).setHealthy(false);
         endpoints.get(1).setHealthy(false);
-        
-        MultinodeConnectionManager manager = new MultinodeConnectionManager(endpoints);
-        
+
         String clusterHealth = manager.generateClusterHealth();
         
         assertEquals("server1:1059(DOWN);server2:1059(DOWN)", clusterHealth);
@@ -79,11 +77,10 @@ class MultinodeConnectionManagerClusterHealthTest {
             new ServerEndpoint("server2", 1059)
         );
         
+        MultinodeConnectionManager manager = new MultinodeConnectionManager(endpoints);
         // Initially server2 is down
         endpoints.get(1).setHealthy(false);
-        
-        MultinodeConnectionManager manager = new MultinodeConnectionManager(endpoints);
-        
+
         String healthBeforeRecovery = manager.generateClusterHealth();
         assertEquals("server1:1059(UP);server2:1059(DOWN)", healthBeforeRecovery);
         
@@ -117,10 +114,9 @@ class MultinodeConnectionManagerClusterHealthTest {
             new ServerEndpoint("192.168.1.3", 1059)
         );
         
-        endpoints.get(1).setHealthy(false);
-        
         MultinodeConnectionManager manager = new MultinodeConnectionManager(endpoints);
-        
+        endpoints.get(1).setHealthy(false);
+
         String clusterHealth = manager.generateClusterHealth();
         
         assertEquals("192.168.1.1:1059(UP);192.168.1.2:1059(DOWN);192.168.1.3:1059(UP)", clusterHealth);
