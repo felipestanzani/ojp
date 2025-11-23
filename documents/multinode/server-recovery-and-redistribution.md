@@ -205,8 +205,10 @@ Database-specific alternatives:
 
 **Example effects:**
 - `1000ms`: Server recovery detected within 1-2 seconds, but more frequent checks
-- `5000ms` (default): Balanced - recovery within 5-10 seconds
+- `5000ms` (default): Balanced - recovery detected within 5-10 seconds
 - `30000ms`: Lower overhead, but recovery takes 30-60 seconds to detect
+
+**Note:** Total recovery time = detection time (interval) + threshold time before retry. With defaults (5s + 5s), expect 10-15 seconds total.
 
 **Impact on system:**
 - Lower values: Faster recovery, slightly higher CPU/network usage
