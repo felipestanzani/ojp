@@ -8,7 +8,7 @@ The `add-load-aware-selection` branch broke the Multinode Integration Test workf
 
 ### Problem Background
 
-In commit `c6ecaaa` with message "Removed active redistribution of XA connections after server resurection", the connection redistribution logic was completely removed from the `performHealthCheck()` method in `MultinodeConnectionManager.java`.
+In commit `c6ecaaa` with message "Removed active redistribution of XA connections after server resurrection", the connection redistribution logic was completely removed from the `performHealthCheck()` method in `MultinodeConnectionManager.java`.
 
 ### What Was Removed
 
