@@ -251,6 +251,24 @@ public class MultinodeConnectionManager {
                 }
             }
         }
+        
+        // For non-XA mode: trigger connection redistribution when servers recover
+        // XA mode handles redistribution differently (through invalidation), so skip it
+        if (!recoveredServers.isEmpty() && xaConnectionRedistributor == null && healthCheckConfig.isRedistributionEnabled()) {
+            log.info("Triggering connection redistribution for {} recovered server(s)", 
+                    recoveredServers.size());
+            
+            List<ServerEndpoint> allHealthyServers = serverEndpoints.stream()
+                    .filter(ServerEndpoint::isHealthy)
+                    .collect(Collectors.toList());
+            
+            try {
+                connectionRedistributor.rebalance(recoveredServers, allHealthyServers);
+            } catch (Exception e) {
+                log.error("Failed to redistribute connections after server recovery: {}", 
+                        e.getMessage(), e);
+            }
+        }
     }
 
     /**
