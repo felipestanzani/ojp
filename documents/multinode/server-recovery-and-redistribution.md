@@ -25,9 +25,31 @@ Recovery: Server2=0 (healthy but unused), Server1=15, Server3=15 (still imbalanc
 The solution implements:
 1. **Time-based health checks** - Periodically validates unhealthy servers
 2. **Server recovery detection** - Identifies when failed servers become healthy
-3. **XA session invalidation** - Clears stale session bindings when server recovers
-4. **Automatic redistribution** - Rebalances connections when servers recover
-5. **Balanced closure** - Fairly distributes connection closures across overloaded servers
+3. **XA session invalidation** - Clears stale session bindings when server recovers (XA mode only)
+4. **Automatic redistribution** - Rebalances connections when servers recover (XA mode only)
+5. **Balanced closure** - Fairly distributes connection closures across overloaded servers (XA mode only)
+6. **Load-aware server selection** - Routes new connections to least-loaded server (XA mode only)
+
+### XA vs Non-XA Behavior Differences
+
+**XA Mode:**
+- Uses `connectToSingleServer()` to connect to ONE server per connection
+- Tracks connections via ConnectionTracker for load-aware selection
+- Supports automatic redistribution when servers recover
+- New connections are routed to least-loaded server
+- Session stickiness: operations must use the same server as the connection
+
+**Non-XA Mode:**
+- Uses `connectToAllServers()` to connect to ALL healthy servers
+- Does NOT track connections (ConnectionTracker not used)
+- Does NOT support automatic redistribution
+- Uses round-robin selection for all operations (not load-aware)
+- Connection pools manage distribution naturally via their own logic
+
+**Why the difference?**
+- XA transactions require session stickiness to a single server
+- Non-XA can use any server for any operation, so connection pools handle distribution
+- In non-XA, the driver ensures all servers know about datasource config by connecting to all
 
 ## Architecture
 
@@ -35,11 +57,12 @@ The solution implements:
 
 #### 1. HealthCheckConfig
 Loads configuration from `ojp.properties`:
-- `ojp.health.check.interval` - How often to check (default: 30000ms)
-- `ojp.health.check.threshold` - Min time before retrying unhealthy server (default: 30000ms)
-- `ojp.health.check.timeout` - Health query timeout (default: 5000ms)
+- `ojp.health.check.interval` - How often to check unhealthy servers (default: 5000ms / 5 seconds)
+- `ojp.health.check.threshold` - Min time before retrying unhealthy server (default: 5000ms / 5 seconds)
+- `ojp.health.check.timeout` - Health query timeout (default: 5000ms / 5 seconds)
 - `ojp.health.check.query` - Health check query (default: SELECT 1)
 - `ojp.redistribution.enabled` - Enable/disable redistribution (default: true)
+- `ojp.loadaware.selection.enabled` - Enable load-aware server selection (default: true, XA mode only)
 
 #### 2. ConnectionTracker
 Tracks active connections and their bound servers using `ConcurrentHashMap`:
@@ -124,19 +147,36 @@ When a server recovers from failure:
 
 ```properties
 # Health check interval (milliseconds) - how often to check unhealthy servers
-ojp.health.check.interval=30000
+# Default: 5000 (5 seconds)
+# Recommended: 5000-30000 (5-30 seconds) for production
+# Lower values detect failures faster but increase overhead
+ojp.health.check.interval=5000
 
 # Health check threshold (milliseconds) - min time before retrying failed server
-ojp.health.check.threshold=30000
+# Default: 5000 (5 seconds)
+# Recommended: Match interval or slightly higher to avoid excessive retries
+ojp.health.check.threshold=5000
 
 # Health check timeout (milliseconds) - query execution timeout
+# Default: 5000 (5 seconds)
+# Recommended: 3000-10000 based on network latency
+# If health checks frequently timeout, increase this value
 ojp.health.check.timeout=5000
 
 # Health check query - executed to validate server health
+# Default: SELECT 1 (works for most databases)
 ojp.health.check.query=SELECT 1
 
 # Enable/disable automatic redistribution on recovery
+# Default: true
+# Set to false to disable connection redistribution when servers recover
 ojp.redistribution.enabled=true
+
+# Enable/disable load-aware server selection (XA mode only)
+# Default: true
+# When enabled, selects server with fewest connections
+# When disabled or in non-XA mode, uses round-robin
+ojp.loadaware.selection.enabled=true
 ```
 
 ### Database-Specific Health Queries
@@ -150,6 +190,104 @@ Database-specific alternatives:
 - **SQL Server**: `SELECT 1`
 - **H2**: `SELECT 1`
 
+## Configuration Parameters Explained
+
+### ojp.health.check.interval
+
+**Purpose:** Controls how often the driver checks for server recovery.
+
+**Default:** 5000ms (5 seconds)
+
+**When to adjust:**
+- **Decrease (1000-3000ms):** For faster failure detection in dev/test environments
+- **Increase (10000-30000ms):** To reduce overhead in stable production environments
+- **Keep default:** For most production use cases
+
+**Example effects:**
+- `1000ms`: Health checks run frequently, server recovery detected quickly (1-2s typical)
+- `5000ms` (default): Balanced - recovery typically detected within 5-10s
+- `30000ms`: Lower overhead, but recovery detection takes 30-60s
+
+**Note:** Recovery detection time = up to 2× interval in worst case (if server recovers just after a check). With 5s interval, typically 5-10s.
+
+**Impact on system:**
+- Lower values: Faster recovery, slightly higher CPU/network usage
+- Higher values: Slower recovery, minimal overhead
+
+### ojp.health.check.threshold
+
+**Purpose:** Minimum time to wait before retrying a server that previously failed a health check.
+
+**Default:** 5000ms (5 seconds)
+
+**When to adjust:**
+- **Match interval:** Recommended for most cases
+- **Higher than interval:** If servers tend to stay down for longer periods
+- **Lower than interval:** Not recommended - may cause excessive retry attempts
+
+**Example effects:**
+- `5000ms` (default): After a server fails, it won't be re-checked for 5s
+- `60000ms`: After a server fails, it won't be re-checked for 60s (good for planned maintenance)
+
+**Relationship with interval:**
+- Threshold filters which failed servers to check during each health check cycle
+- If threshold = interval: Failed servers eligible for retry at every check
+- If threshold > interval: Failed servers wait longer before being rechecked
+- If threshold < interval: Failed servers may be checked multiple times per threshold period
+- Best practice: Set threshold ≥ interval to avoid excessive retry attempts
+
+### ojp.health.check.timeout
+
+**Purpose:** Maximum time to wait for a health check query to complete.
+
+**Default:** 5000ms (5 seconds)
+
+**When to adjust:**
+- **Decrease (1000-3000ms):** For low-latency networks where fast response expected
+- **Increase (10000-15000ms):** For high-latency networks or slow-starting servers
+- **Keep default:** For most production networks
+
+**Example effects:**
+- `1000ms`: Server must respond within 1 second or marked unhealthy
+- `5000ms` (default): Balanced for typical network latency
+- `15000ms`: Tolerates slow networks/server startup, but slow to detect failures
+
+**Symptoms of incorrect value:**
+- Too low: Healthy servers incorrectly marked as failed due to normal latency
+- Too high: Takes longer to detect genuinely failed servers
+
+**Best practice:** Set to 2-3x your typical network round-trip time
+
+### Configuration Examples by Scenario
+
+**Development/Testing:**
+```properties
+ojp.health.check.interval=2000        # Fast detection
+ojp.health.check.threshold=2000       # Quick retry
+ojp.health.check.timeout=3000         # Tolerate local network
+```
+
+**Production - High Availability:**
+```properties
+ojp.health.check.interval=5000        # Balanced detection (default)
+ojp.health.check.threshold=5000       # Match interval (default)
+ojp.health.check.timeout=5000         # Standard timeout (default)
+```
+
+**Production - Stable Environment:**
+```properties
+ojp.health.check.interval=30000       # Lower overhead
+ojp.health.check.threshold=30000      # Match longer interval
+ojp.health.check.timeout=10000        # Allow for occasional slowness
+```
+
+**High-Latency Network:**
+```properties
+ojp.health.check.interval=10000       # Check less frequently
+ojp.health.check.threshold=10000      # Match interval
+ojp.health.check.timeout=15000        # Account for network latency
+```
+
 ## Performance
 
 ### Overhead
@@ -159,7 +297,7 @@ Database-specific alternatives:
 - Timestamp comparison only
 - No locks, no I/O
 
-**Health Check (every 30s by default):**
+**Health Check (every 5s by default):**
 - Validates only unhealthy servers
 - Single thread execution (via compareAndSet)
 - ~100-300ms per server validation
@@ -167,9 +305,16 @@ Database-specific alternatives:
 
 ### Scalability
 
+**XA Mode:**
 - Works efficiently with 10-50 connections (typical)
 - ConcurrentHashMap iteration very fast for this size
 - Only iterates map during redistribution (infrequent)
+- Load-aware selection adds minimal overhead
+
+**Non-XA Mode:**
+- No connection tracking overhead
+- Round-robin selection is extremely fast
+- Connection pools handle distribution naturally
 
 ## Testing
 
@@ -298,54 +443,73 @@ Session invalidation only affects XA mode. In non-XA mode, applications should i
 ### Configuration
 
 1. **Set appropriate intervals**
-   - Start with 30s interval (default)
-   - Increase for stable environments (60s+)
-   - Decrease for testing only (10s minimum)
+   - Start with 5s interval (default) for most environments
+   - Increase for stable environments (10-30s) to reduce overhead
+   - Decrease for testing only (1-3s for faster feedback)
+   - Never set below 1 second to avoid excessive overhead
 
 2. **Use simple health queries**
    - `SELECT 1` is sufficient for most cases
    - Avoid complex queries or large result sets
    - Ensure query executes in < 1 second
+   - Don't use queries that acquire locks
 
-3. **Enable logging during initial deployment**
+3. **Match threshold to interval**
+   - Set `threshold` = `interval` for most cases
+   - Only increase threshold if servers tend to stay down longer
+   - Never set threshold < interval
+
+4. **Enable logging during initial deployment**
    - Set `log.level.org.openjproxy.grpc.client=INFO`
    - Monitor recovery events
-   - Verify redistribution working
+   - Verify redistribution working (XA mode only)
+
+5. **Consider your deployment mode**
+   - **XA mode**: Benefits from load-aware selection and automatic redistribution
+   - **Non-XA mode**: Uses round-robin, relies on connection pool for distribution
 
 ### Operations
 
 1. **Monitor connection distribution**
-   - Check logs for redistribution events
-   - Verify balanced distribution after recovery
+   - Check logs for redistribution events (XA mode only)
+   - Verify balanced distribution after recovery (XA mode only)
    - Alert on permanent imbalance
+   - In non-XA mode, let connection pools handle distribution
 
 2. **Plan for downtime**
    - Health checks will detect planned restarts
-   - Redistribution automatic (no manual intervention)
-   - Expect 30-60s delay for rebalancing
+   - Redistribution automatic in XA mode (no manual intervention)
+   - Expect 5-10 seconds delay for rebalancing (based on default 5s interval, worst case 10s)
+   - Non-XA mode: Connection pools will naturally redistribute
 
 3. **Test recovery scenarios**
    - Test server failure and recovery
-   - Verify redistribution working
+   - Verify redistribution working (XA mode)
    - Validate performance acceptable
+   - Monitor both XA and non-XA deployments separately
 
 ## Limitations
 
-1. **Requires connection pool**
+1. **XA Mode Only Features**
+   - Connection tracking and load-aware selection only work in XA mode
+   - Automatic redistribution only applies to XA deployments
+   - Non-XA mode uses round-robin and relies on connection pools for distribution
+
+2. **Requires connection pool validation**
    - Works with pools that validate connections (isValid() or test query)
    - Most modern pools support this (Atomikos, HikariCP, DBCP)
 
-2. **Gradual redistribution**
+3. **Gradual redistribution (XA mode)**
    - Connections marked as borrowed
    - Takes time for all connections to be redistributed
    - Usually completes within few minutes under normal traffic
 
-3. **Cannot interrupt transactions**
+4. **Cannot interrupt transactions**
    - Active transactions not interrupted
    - Connection marked on return to pool
    - Ensures transaction safety
 
-4. **Multinode only**
+5. **Multinode only**
    - Feature only works in multinode deployments
    - Single-node deployments unaffected
 
