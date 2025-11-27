@@ -36,8 +36,8 @@ public class OracleXAIntegrationTest {
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        // Enable by default for testing
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableOracleTests", "false"));
+        // Disabled by default
+        isTestDisabled = !Boolean.parseBoolean(System.getProperty("enableOracleTests", "false"));
     }
 
     public void setUp(String driverClass, String url, String user, String password) throws SQLException {
