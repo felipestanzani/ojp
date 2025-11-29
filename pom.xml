@@ -16,6 +16,8 @@
         <module>ojp-grpc-commons</module>
         <module>ojp-jdbc-driver</module>
         <module>ojp-server</module>
+        <module>ojp-datasource-api</module>
+        <module>ojp-datasource-dbcp</module>
     </modules>
 
     <properties>
