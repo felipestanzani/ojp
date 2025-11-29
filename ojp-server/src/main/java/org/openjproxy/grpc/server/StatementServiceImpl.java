@@ -22,7 +22,6 @@ import com.openjproxy.grpc.StatementServiceGrpc;
 import com.openjproxy.grpc.TargetCall;
 import com.openjproxy.grpc.TransactionInfo;
 import com.openjproxy.grpc.TransactionStatus;
-import com.zaxxer.hikari.HikariConfig;
 import com.zaxxer.hikari.HikariDataSource;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
@@ -54,7 +53,10 @@ import org.openjproxy.grpc.server.statement.StatementFactory;
 import org.openjproxy.grpc.server.resultset.ResultSetWrapper;
 import org.openjproxy.grpc.server.lob.LobProcessor;
 import org.openjproxy.grpc.server.utils.StatementRequestValidator;
+import org.openjproxy.datasource.ConnectionPoolProviderRegistry;
+import org.openjproxy.datasource.PoolConfig;
 
+import javax.sql.DataSource;
 import javax.sql.XAConnection;
 import javax.sql.XADataSource;
 import java.io.ByteArrayInputStream;
@@ -107,7 +109,7 @@ import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMe
 @RequiredArgsConstructor
 public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceImplBase {
 
-    private final Map<String, HikariDataSource> datasourceMap = new ConcurrentHashMap<>();
+    private final Map<String, DataSource> datasourceMap = new ConcurrentHashMap<>();
     // Map for storing XADataSources (native database XADataSource, not Atomikos)
     private final Map<String, XADataSource> xaDataSourceMap = new ConcurrentHashMap<>();
     private final SessionManager sessionManager;
@@ -165,10 +167,12 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         if (clusterHealth != null && !clusterHealth.isEmpty() && 
             connHash != null && !connHash.isEmpty()) {
             
-            // Get the HikariDataSource for this connection hash to enable dynamic resizing
-            HikariDataSource dataSource = datasourceMap.get(connHash);
+            // Get the DataSource for this connection hash to enable dynamic resizing
+            // Cast to HikariDataSource for backward compatibility with HikariCP-specific resizing
+            DataSource ds = datasourceMap.get(connHash);
+            HikariDataSource hikariDataSource = (ds instanceof HikariDataSource) ? (HikariDataSource) ds : null;
             
-            ConnectionPoolConfigurer.processClusterHealth(connHash, clusterHealth, clusterHealthTracker, dataSource);
+            ConnectionPoolConfigurer.processClusterHealth(connHash, clusterHealth, clusterHealthTracker, hikariDataSource);
         }
     }
 
@@ -298,27 +302,38 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             }
         }
         
-        // Handle non-XA connection - use HikariCP
-        HikariDataSource ds = this.datasourceMap.get(connHash);
+        // Handle non-XA connection - use Connection Pool SPI (HikariCP by default)
+        DataSource ds = this.datasourceMap.get(connHash);
         if (ds == null) {
             try {
-                HikariConfig config = new HikariConfig();
-                config.setJdbcUrl(UrlParser.parseUrl(connectionDetails.getUrl()));
-                config.setUsername(connectionDetails.getUser());
-                config.setPassword(connectionDetails.getPassword());
-
-                // Configure HikariCP using datasource-specific configuration
+                // Get datasource-specific configuration from client properties
+                Properties clientProperties = ConnectionPoolConfigurer.extractClientProperties(connectionDetails);
                 DataSourceConfigurationManager.DataSourceConfiguration dsConfig = 
-                        ConnectionPoolConfigurer.configureHikariPool(config, connectionDetails, connHash);
-
-                ds = new HikariDataSource(config);
+                        DataSourceConfigurationManager.getConfiguration(clientProperties);
+                
+                // Build PoolConfig from connection details and configuration
+                PoolConfig poolConfig = PoolConfig.builder()
+                        .url(UrlParser.parseUrl(connectionDetails.getUrl()))
+                        .username(connectionDetails.getUser())
+                        .password(connectionDetails.getPassword())
+                        .maxPoolSize(dsConfig.getMaximumPoolSize())
+                        .minIdle(dsConfig.getMinimumIdle())
+                        .connectionTimeoutMs(dsConfig.getConnectionTimeout())
+                        .idleTimeoutMs(dsConfig.getIdleTimeout())
+                        .maxLifetimeMs(dsConfig.getMaxLifetime())
+                        .metricsPrefix("OJP-Pool-" + dsConfig.getDataSourceName())
+                        .build();
+                
+                // Create DataSource using the SPI (HikariCP by default)
+                ds = ConnectionPoolProviderRegistry.createDataSource(poolConfig);
                 this.datasourceMap.put(connHash, ds);
                 
                 // Create a slow query segregation manager for this datasource
-                createSlowQuerySegregationManagerForDatasource(connHash, config.getMaximumPoolSize());
+                createSlowQuerySegregationManagerForDatasource(connHash, dsConfig.getMaximumPoolSize());
                 
-                log.info("Created new HikariDataSource for dataSource '{}' with connHash: {}", 
-                        dsConfig.getDataSourceName(), connHash);
+                log.info("Created new DataSource for dataSource '{}' with connHash: {} using provider: {}", 
+                        dsConfig.getDataSourceName(), connHash, 
+                        ConnectionPoolProviderRegistry.getDefaultProvider().map(p -> p.id()).orElse("unknown"));
                 
             } catch (Exception e) {
                 log.error("Failed to create datasource for connection hash {}: {}", connHash, e.getMessage(), e);
@@ -1381,8 +1396,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 // This shouldn't happen as XA sessions are created eagerly
                 throw new SQLException("XA session should already exist. Session UUID is missing.");
             } else {
-                // Regular connection - acquire from HikariCP datasource
-                HikariDataSource dataSource = this.datasourceMap.get(connHash);
+                // Regular connection - acquire from datasource (HikariCP by default)
+                DataSource dataSource = this.datasourceMap.get(connHash);
                 if (dataSource == null) {
                     throw new SQLException("No datasource found for connection hash: " + connHash);
                 }
@@ -1390,9 +1405,9 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 try {
                     // Use enhanced connection acquisition with timeout protection
                     conn = ConnectionAcquisitionManager.acquireConnection(dataSource, connHash);
-                    log.debug("Successfully acquired connection from Hikari pool for hash: {}", connHash);
+                    log.debug("Successfully acquired connection from pool for hash: {}", connHash);
                 } catch (SQLException e) {
-                    log.error("Failed to acquire connection from Hikari pool for hash: {}. Error: {}",
+                    log.error("Failed to acquire connection from pool for hash: {}. Error: {}",
                         connHash, e.getMessage());
                     
                     // Re-throw the enhanced exception from ConnectionAcquisitionManager
@@ -1542,14 +1557,6 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
     /**
      * Backward compatibility wrapper for configureHikariPool method.
-     * This method was moved to ConnectionPoolConfigurer but tests still access it via reflection.
-     * 
-     * @param config The HikariConfig to configure
-     * @param connectionDetails The connection details containing properties
-     */
-    private void configureHikariPool(HikariConfig config, ConnectionDetails connectionDetails) {
-        ConnectionPoolConfigurer.configureHikariPool(config, connectionDetails);
-    }
 
 
     // ===== XA Transaction Operations =====

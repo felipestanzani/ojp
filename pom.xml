@@ -17,6 +17,7 @@
         <module>ojp-jdbc-driver</module>
         <module>ojp-server</module>
         <module>ojp-datasource-api</module>
+        <module>ojp-datasource-hikari</module>
         <module>ojp-datasource-dbcp</module>
     </modules>
 

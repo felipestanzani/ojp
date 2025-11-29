@@ -2,6 +2,10 @@
 
 This document provides a complete reference for configuring connection pools in OJP.
 
+## Overview
+
+OJP uses a connection pool abstraction layer that allows switching between different pool implementations. The configuration properties have always been `ojp.` prefixed, following the OJP naming convention.
+
 ## Server Configuration
 
 ### Environment Variables
@@ -34,18 +38,36 @@ ojp.connection.pool.idleTimeout=600000
 ojp.connection.pool.maxLifetime=1800000
 ```
 
-## Property Mapping
+### Per-Datasource Configuration
 
-### Legacy HikariCP Properties → Unified Properties
+For named datasources, prefix the properties with the datasource name:
 
-| Legacy Property | Unified Property |
-|-----------------|------------------|
-| `hikari.maximumPoolSize` | `ojp.connection.pool.maximumPoolSize` |
-| `hikari.minimumIdle` | `ojp.connection.pool.minimumIdle` |
-| `hikari.connectionTimeout` | `ojp.connection.pool.connectionTimeout` |
-| `hikari.idleTimeout` | `ojp.connection.pool.idleTimeout` |
-| `hikari.maxLifetime` | `ojp.connection.pool.maxLifetime` |
-| `hikari.connectionTestQuery` | `ojp.connection.pool.validationQuery` |
+```properties
+# Default datasource settings
+ojp.connection.pool.maximumPoolSize=20
+ojp.connection.pool.minimumIdle=5
+
+# Named datasource "mainApp"
+mainApp.ojp.connection.pool.maximumPoolSize=30
+mainApp.ojp.connection.pool.minimumIdle=10
+
+# Named datasource "batchJob"  
+batchJob.ojp.connection.pool.maximumPoolSize=5
+batchJob.ojp.connection.pool.minimumIdle=1
+```
+
+## Property Reference
+
+### OJP Connection Pool Properties
+
+| Property | Description | Default |
+|----------|-------------|---------|
+| `ojp.connection.pool.maximumPoolSize` | Maximum pool size | 20 |
+| `ojp.connection.pool.minimumIdle` | Minimum idle connections | 5 |
+| `ojp.connection.pool.connectionTimeout` | Connection timeout (ms) | 10000 |
+| `ojp.connection.pool.idleTimeout` | Idle timeout (ms) | 600000 |
+| `ojp.connection.pool.maxLifetime` | Max connection lifetime (ms) | 1800000 |
+| `ojp.datasource.name` | Logical datasource name | default |
 
 ### Provider-Specific Properties
 
@@ -88,14 +110,15 @@ The DBCP provider automatically configures:
 
 ## Default Values
 
+These are the default values defined in `CommonConstants`:
+
 | Setting | Default |
 |---------|---------|
-| `maxPoolSize` | 10 |
-| `minIdle` | 2 |
-| `connectionTimeoutMs` | 30000 (30 seconds) |
-| `idleTimeoutMs` | 600000 (10 minutes) |
-| `maxLifetimeMs` | 1800000 (30 minutes) |
-| `autoCommit` | true |
+| `maximumPoolSize` | 20 |
+| `minimumIdle` | 5 |
+| `connectionTimeout` | 10000 (10 seconds) |
+| `idleTimeout` | 600000 (10 minutes) |
+| `maxLifetime` | 1800000 (30 minutes) |
 
 ## Examples
 

@@ -1,31 +1,39 @@
 # Migration Guide: Connection Pool Abstraction
 
-This guide helps you migrate from the current HikariCP-specific implementation to the new connection pool abstraction.
+This guide explains the OJP connection pool abstraction layer and how to use different pool providers.
 
 ## Overview
 
 The OJP connection pool abstraction provides:
 - Provider-agnostic configuration
-- Easy switching between pool implementations
+- Easy switching between pool implementations (HikariCP, DBCP, etc.)
 - Secure credential handling
 - ServiceLoader-based provider discovery
 
-## Migration Steps
+## How It Works
 
-### Step 1: Update Dependencies
+OJP now uses a Service Provider Interface (SPI) for connection pool implementations. By default, HikariCP is used as the provider, but you can switch to other providers like Apache Commons DBCP.
 
-Add the datasource API module to your project:
+The configuration properties have always been `ojp.` prefixed and continue to work unchanged.
 
-```xml
-<dependency>
-    <groupId>org.openjproxy</groupId>
-    <artifactId>ojp-datasource-api</artifactId>
-    <version>${ojp.version}</version>
-</dependency>
+## Using Different Providers
+
+### Default (HikariCP)
+
+HikariCP is the default provider. No changes are needed if you're already using OJP's connection pool configuration:
+
+```properties
+# ojp.properties - existing configuration continues to work
+ojp.connection.pool.maximumPoolSize=20
+ojp.connection.pool.minimumIdle=5
+ojp.connection.pool.connectionTimeout=10000
 ```
 
-If using DBCP provider:
+### Switching to DBCP
 
+To use Apache Commons DBCP2 instead of HikariCP:
+
+1. Add the DBCP provider dependency:
 ```xml
 <dependency>
     <groupId>org.openjproxy</groupId>
@@ -34,116 +42,67 @@ If using DBCP provider:
 </dependency>
 ```
 
-### Step 2: Update Code
-
-#### Before (Direct HikariCP)
-
-```java
-import com.zaxxer.hikari.HikariConfig;
-import com.zaxxer.hikari.HikariDataSource;
-
-HikariConfig config = new HikariConfig();
-config.setJdbcUrl(url);
-config.setUsername(username);
-config.setPassword(password);
-config.setMaximumPoolSize(20);
-config.setMinimumIdle(5);
-config.setConnectionTimeout(30000);
-
-HikariDataSource dataSource = new HikariDataSource(config);
-
-// Later...
-dataSource.close();
+2. Configure the provider:
+```properties
+# ojp.properties
+ojp.datasource.provider=dbcp
 ```
 
-#### After (Pool Abstraction)
+## Configuration Reference
+
+### OJP Connection Pool Properties
+
+| Property | Description |
+|----------|-------------|
+| `ojp.connection.pool.maximumPoolSize` | Maximum pool size |
+| `ojp.connection.pool.minimumIdle` | Minimum idle connections |
+| `ojp.connection.pool.connectionTimeout` | Connection timeout (ms) |
+| `ojp.connection.pool.idleTimeout` | Idle timeout (ms) |
+| `ojp.connection.pool.maxLifetime` | Max connection lifetime (ms) |
+| `ojp.datasource.name` | Logical datasource name |
+| `ojp.datasource.provider` | Provider ID (hikari, dbcp) |
+
+### Per-Datasource Configuration
+
+For named datasources, prefix properties with the datasource name:
+
+```properties
+# Default settings
+ojp.connection.pool.maximumPoolSize=20
+
+# Named datasource "mainApp"
+mainApp.ojp.connection.pool.maximumPoolSize=30
+
+# Named datasource "batchJob"
+batchJob.ojp.connection.pool.maximumPoolSize=5
+```
+
+## Programmatic Usage
+
+### Using the SPI Directly
 
 ```java
 import org.openjproxy.datasource.PoolConfig;
 import org.openjproxy.datasource.ConnectionPoolProviderRegistry;
 
+// Build configuration
 PoolConfig config = PoolConfig.builder()
-    .url(url)
-    .username(username)
-    .password(password)
+    .url("jdbc:postgresql://localhost:5432/mydb")
+    .username("user")
+    .password("secret")
     .maxPoolSize(20)
     .minIdle(5)
-    .connectionTimeoutMs(30000)
+    .connectionTimeoutMs(10000)
     .build();
 
-DataSource dataSource = ConnectionPoolProviderRegistry.createDataSource(config);
+// Create DataSource using default provider (HikariCP)
+DataSource ds = ConnectionPoolProviderRegistry.createDataSource(config);
 
-// Later...
-ConnectionPoolProviderRegistry.closeDataSource("dbcp", dataSource);
-```
-
-### Step 3: Update Configuration Properties
-
-#### Before (ojp.properties)
-
-```properties
-hikari.maximumPoolSize=20
-hikari.minimumIdle=5
-hikari.connectionTimeout=30000
-```
-
-#### After (ojp.properties)
-
-```properties
-# Provider selection (optional)
-ojp.datasource.provider=dbcp
-
-# Pool configuration
-ojp.connection.pool.maximumPoolSize=20
-ojp.connection.pool.minimumIdle=5
-ojp.connection.pool.connectionTimeout=30000
-```
-
-## Property Mapping Reference
-
-| Old Property | New Property | Notes |
-|--------------|--------------|-------|
-| `hikari.jdbcUrl` | `url` (programmatic) | Use URL directly |
-| `hikari.username` | `username` (programmatic) | Use username directly |
-| `hikari.password` | `password` (programmatic) | Use password directly |
-| `hikari.maximumPoolSize` | `ojp.connection.pool.maximumPoolSize` | Same behavior |
-| `hikari.minimumIdle` | `ojp.connection.pool.minimumIdle` | Same behavior |
-| `hikari.connectionTimeout` | `ojp.connection.pool.connectionTimeout` | Same behavior |
-| `hikari.idleTimeout` | `ojp.connection.pool.idleTimeout` | Same behavior |
-| `hikari.maxLifetime` | `ojp.connection.pool.maxLifetime` | Same behavior |
-| `hikari.connectionTestQuery` | `ojp.connection.pool.validationQuery` | Renamed |
-
-## Backward Compatibility
-
-The new abstraction is designed for backward compatibility:
-
-1. **Default provider**: If no provider is specified, the system defaults to HikariCP (when available)
-2. **Legacy properties**: Legacy `hikari.*` properties continue to work
-3. **Existing configurations**: No changes required unless switching providers
-
-## Selecting a Provider
-
-### Programmatically
-
-```java
-// Use specific provider
+// Or specify a provider
 DataSource ds = ConnectionPoolProviderRegistry.createDataSource("dbcp", config);
 
-// Use default (highest priority available)
-DataSource ds = ConnectionPoolProviderRegistry.createDataSource(config);
-```
-
-### Via Configuration
-
-```properties
-# In ojp.properties
-ojp.datasource.provider=dbcp
-```
-
-### Via Environment Variable
-
-```bash
-export OJP_DATASOURCE_PROVIDER=dbcp
+// Close when done
+ConnectionPoolProviderRegistry.closeDataSource("hikari", ds);
 ```
 
 ## Provider Priority
@@ -156,42 +115,32 @@ When no provider is specified, the registry selects the provider with the highes
 | DBCP | 10 |
 | Custom | 0 (default) |
 
-## Troubleshooting Migration
+## Environment Variable Override
+
+Override the provider via environment variable:
+
+```bash
+export OJP_DATASOURCE_PROVIDER=dbcp
+```
+
+## Troubleshooting
 
 ### "Unknown provider" error
 
 Ensure the provider module is on the classpath:
 - For DBCP: Add `ojp-datasource-dbcp` dependency
-- For HikariCP: Add HikariCP dependency and provider module
+- For HikariCP: Already included by default
 
-### Pool not closing properly
+### Pool Statistics
 
-Always close DataSources using the registry:
-
-```java
-// Correct
-ConnectionPoolProviderRegistry.closeDataSource("dbcp", dataSource);
-
-// Incorrect - provider doesn't know about the close
-((BasicDataSource) dataSource).close();
-```
-
-### Statistics not available
-
-Ensure you're using the correct provider ID when getting statistics:
+Get pool statistics for monitoring:
 
 ```java
-Map<String, Object> stats = ConnectionPoolProviderRegistry.getStatistics("dbcp", dataSource);
+Map<String, Object> stats = ConnectionPoolProviderRegistry.getStatistics("hikari", dataSource);
+System.out.println("Active connections: " + stats.get("activeConnections"));
+System.out.println("Idle connections: " + stats.get("idleConnections"));
 ```
-
-## Future Integration with OJP Server
-
-The connection pool abstraction is designed to be integrated into the OJP server. A future update will:
-
-1. Replace direct HikariCP usage in `StatementServiceImpl` with the abstraction
-2. Allow server-side provider selection via configuration
-3. Support per-datasource provider selection
 
 ## Support
 
-For questions or issues with migration, please open an issue on the [OJP GitHub repository](https://github.com/Open-J-Proxy/ojp).
+For questions or issues, please open an issue on the [OJP GitHub repository](https://github.com/Open-J-Proxy/ojp).

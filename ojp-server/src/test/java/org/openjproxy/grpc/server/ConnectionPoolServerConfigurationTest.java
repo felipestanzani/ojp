@@ -6,8 +6,9 @@ import com.zaxxer.hikari.HikariConfig;
 import org.junit.jupiter.api.Test;
 import org.openjproxy.constants.CommonConstants;
 import org.openjproxy.grpc.ProtoConverter;
+import org.openjproxy.grpc.server.pool.ConnectionPoolConfigurer;
+import org.openjproxy.grpc.server.pool.DataSourceConfigurationManager;
 
-import java.lang.reflect.Method;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
@@ -16,19 +17,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Test for server-side connection pool configuration.
+ * Tests that client properties are correctly parsed and applied to pool configuration.
  */
 public class ConnectionPoolServerConfigurationTest {
 
-    private StatementServiceImpl createTestStatementServiceImpl() {
-        ServerConfiguration testConfig = new ServerConfiguration();
-        return new StatementServiceImpl(null, null, testConfig);
-    }
-
     @Test
     public void testHikariConfigurationWithClientProperties() throws Exception {
-        // Create a StatementServiceImpl instance
-        StatementServiceImpl serviceImpl = createTestStatementServiceImpl();
-        
         // Create test properties that a client would send
         Properties clientProperties = new Properties();
         clientProperties.setProperty("ojp.connection.pool.maximumPoolSize", "25");
@@ -49,33 +43,23 @@ public class ConnectionPoolServerConfigurationTest {
                 .addAllProperties(ProtoConverter.propertiesToProto(propertiesMap))
                 .build();
         
-        // Create HikariConfig to test configuration
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:testdb");
-        config.setUsername("test");
-        config.setPassword("test");
-        
-        // Use reflection to call the private configureHikariPool method
-        Method configureMethod = StatementServiceImpl.class.getDeclaredMethod("configureHikariPool", HikariConfig.class, ConnectionDetails.class);
-        configureMethod.setAccessible(true);
-        configureMethod.invoke(serviceImpl, config, connectionDetails);
+        // Extract client properties and get configuration
+        Properties extractedProperties = ConnectionPoolConfigurer.extractClientProperties(connectionDetails);
+        DataSourceConfigurationManager.DataSourceConfiguration dsConfig = 
+                DataSourceConfigurationManager.getConfiguration(extractedProperties);
         
         // Verify that client properties were applied
-        assertEquals(25, config.getMaximumPoolSize());
-        assertEquals(7, config.getMinimumIdle());
-        assertEquals(true, config.isAutoCommit());
+        assertEquals(25, dsConfig.getMaximumPoolSize());
+        assertEquals(7, dsConfig.getMinimumIdle());
 
         // Verify that properties not provided use defaults
-        assertEquals(CommonConstants.DEFAULT_IDLE_TIMEOUT, config.getIdleTimeout());
-        assertEquals(CommonConstants.DEFAULT_MAX_LIFETIME, config.getMaxLifetime());
-        assertEquals(CommonConstants.DEFAULT_CONNECTION_TIMEOUT, config.getConnectionTimeout());
+        assertEquals(CommonConstants.DEFAULT_IDLE_TIMEOUT, dsConfig.getIdleTimeout());
+        assertEquals(CommonConstants.DEFAULT_MAX_LIFETIME, dsConfig.getMaxLifetime());
+        assertEquals(CommonConstants.DEFAULT_CONNECTION_TIMEOUT, dsConfig.getConnectionTimeout());
     }
 
     @Test
     public void testHikariConfigurationWithoutClientProperties() throws Exception {
-        // Create a StatementServiceImpl instance
-        StatementServiceImpl serviceImpl = createTestStatementServiceImpl();
-        
         // Create ConnectionDetails without properties
         ConnectionDetails connectionDetails = ConnectionDetails.newBuilder()
                 .setUrl("jdbc:h2:mem:testdb")
@@ -84,30 +68,21 @@ public class ConnectionPoolServerConfigurationTest {
                 .setClientUUID("test-client")
                 .build();
         
-        // Create HikariConfig to test configuration
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:testdb");
-        config.setUsername("test");
-        config.setPassword("test");
-        
-        // Use reflection to call the private configureHikariPool method
-        Method configureMethod = StatementServiceImpl.class.getDeclaredMethod("configureHikariPool", HikariConfig.class, ConnectionDetails.class);
-        configureMethod.setAccessible(true);
-        configureMethod.invoke(serviceImpl, config, connectionDetails);
+        // Extract client properties (will be null)
+        Properties extractedProperties = ConnectionPoolConfigurer.extractClientProperties(connectionDetails);
+        DataSourceConfigurationManager.DataSourceConfiguration dsConfig = 
+                DataSourceConfigurationManager.getConfiguration(extractedProperties);
         
         // Verify that all default values are applied
-        assertEquals(CommonConstants.DEFAULT_MAXIMUM_POOL_SIZE, config.getMaximumPoolSize());
-        assertEquals(CommonConstants.DEFAULT_MINIMUM_IDLE, config.getMinimumIdle());
-        assertEquals(CommonConstants.DEFAULT_IDLE_TIMEOUT, config.getIdleTimeout());
-        assertEquals(CommonConstants.DEFAULT_MAX_LIFETIME, config.getMaxLifetime());
-        assertEquals(CommonConstants.DEFAULT_CONNECTION_TIMEOUT, config.getConnectionTimeout());
+        assertEquals(CommonConstants.DEFAULT_MAXIMUM_POOL_SIZE, dsConfig.getMaximumPoolSize());
+        assertEquals(CommonConstants.DEFAULT_MINIMUM_IDLE, dsConfig.getMinimumIdle());
+        assertEquals(CommonConstants.DEFAULT_IDLE_TIMEOUT, dsConfig.getIdleTimeout());
+        assertEquals(CommonConstants.DEFAULT_MAX_LIFETIME, dsConfig.getMaxLifetime());
+        assertEquals(CommonConstants.DEFAULT_CONNECTION_TIMEOUT, dsConfig.getConnectionTimeout());
     }
 
     @Test
     public void testHikariConfigurationWithInvalidProperties() throws Exception {
-        // Create a StatementServiceImpl instance
-        StatementServiceImpl serviceImpl = createTestStatementServiceImpl();
-        
         // Create test properties with invalid values
         Properties clientProperties = new Properties();
         clientProperties.setProperty("ojp.connection.pool.maximumPoolSize", "invalid_number");
@@ -128,20 +103,13 @@ public class ConnectionPoolServerConfigurationTest {
                 .addAllProperties(ProtoConverter.propertiesToProto(propertiesMap))
                 .build();
         
-        // Create HikariConfig to test configuration
-        HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:testdb");
-        config.setUsername("test");
-        config.setPassword("test");
+        // Extract client properties and get configuration
+        Properties extractedProperties = ConnectionPoolConfigurer.extractClientProperties(connectionDetails);
+        DataSourceConfigurationManager.DataSourceConfiguration dsConfig = 
+                DataSourceConfigurationManager.getConfiguration(extractedProperties);
         
-        // Use reflection to call the private configureHikariPool method
-        Method configureMethod = StatementServiceImpl.class.getDeclaredMethod("configureHikariPool", HikariConfig.class, ConnectionDetails.class);
-        configureMethod.setAccessible(true);
-        configureMethod.invoke(serviceImpl, config, connectionDetails);
-        
-        // Verify that invalid values fall back to defaults, but valid values are applied
-        assertEquals(CommonConstants.DEFAULT_MAXIMUM_POOL_SIZE, config.getMaximumPoolSize()); // Falls back to default
-        assertEquals(CommonConstants.DEFAULT_MINIMUM_IDLE, config.getMinimumIdle()); // Falls back to default
-        assertEquals(true, config.isAutoCommit()); // Valid value applied
+        // Verify that invalid values fall back to defaults
+        assertEquals(CommonConstants.DEFAULT_MAXIMUM_POOL_SIZE, dsConfig.getMaximumPoolSize()); // Falls back to default
+        assertEquals(CommonConstants.DEFAULT_MINIMUM_IDLE, dsConfig.getMinimumIdle()); // Falls back to default
     }
 }

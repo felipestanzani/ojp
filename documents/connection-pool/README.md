@@ -7,23 +7,32 @@ This document describes the OJP Connection Pool Abstraction - a pluggable SPI fo
 OJP provides a connection pool abstraction layer that allows users to choose between different connection pool implementations. The abstraction consists of:
 
 - **ojp-datasource-api**: Core API module containing the SPI interfaces and configuration classes
-- **ojp-datasource-dbcp**: Apache Commons DBCP2 provider implementation (reference implementation)
+- **ojp-datasource-hikari**: HikariCP provider (default, highest priority)
+- **ojp-datasource-dbcp**: Apache Commons DBCP2 provider (alternative)
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        OJP Application                          │
+│                    OJP Server (StatementServiceImpl)            │
 ├─────────────────────────────────────────────────────────────────┤
 │                ConnectionPoolProviderRegistry                    │
 │           (ServiceLoader discovery & factory)                    │
 ├──────────────────────┬──────────────────────────────────────────┤
 │  ConnectionPoolProvider (SPI Interface)                         │
-├──────────────────────┼──────────────────────────────────────────┤
-│   HikariCP Provider  │     DBCP Provider     │  Custom Provider │
-│   (ojp-pool-hikari)  │  (ojp-datasource-dbcp)│     (user jar)   │
-└──────────────────────┴──────────────────────────────────────────┘
+├──────────────────────┼──────────────────────┬───────────────────┤
+│   HikariCP Provider  │     DBCP Provider    │  Custom Provider  │
+│(ojp-datasource-hikari)│(ojp-datasource-dbcp) │    (user jar)     │
+│    Priority: 100     │     Priority: 10      │    Priority: 0    │
+└──────────────────────┴──────────────────────┴───────────────────┘
 ```
+
+## Integration
+
+The OJP server (`StatementServiceImpl`) uses this abstraction layer to create connection pools. By default, HikariCP is used, but you can switch to other providers by:
+
+1. Adding the provider module to the classpath
+2. Optionally setting `ojp.datasource.provider` to the provider ID
 
 ## Modules
 
@@ -39,9 +48,17 @@ The core API module containing:
 
 **Note:** This module has no dependencies on vendor-specific libraries.
 
+### ojp-datasource-hikari
+
+HikariCP provider (default):
+
+| Class | Description |
+|-------|-------------|
+| `HikariConnectionPoolProvider` | HikariCP implementation of `ConnectionPoolProvider` |
+
 ### ojp-datasource-dbcp
 
-Apache Commons DBCP2 provider implementation:
+Apache Commons DBCP2 provider:
 
 | Class | Description |
 |-------|-------------|
@@ -270,6 +287,7 @@ DataSource ds = ConnectionPoolProviderRegistry.createDataSource(config);
 
 | Provider ID | Module | Description | Priority |
 |-------------|--------|-------------|----------|
+| `hikari` | ojp-datasource-hikari | HikariCP (Default) | 100 |
 | `dbcp` | ojp-datasource-dbcp | Apache Commons DBCP2 | 10 |
 
 ## Statistics

@@ -29,6 +29,18 @@
             <version>0.2.1-snapshot</version>
         </dependency>
 
+        <!-- OJP Datasource API and default HikariCP provider -->
+        <dependency>
+            <groupId>org.openjproxy</groupId>
+            <artifactId>ojp-datasource-api</artifactId>
+            <version>0.2.1-snapshot</version>
+        </dependency>
+        <dependency>
+            <groupId>org.openjproxy</groupId>
+            <artifactId>ojp-datasource-hikari</artifactId>
+            <version>0.2.1-snapshot</version>
+        </dependency>
+
         <dependency>
             <groupId>io.grpc</groupId>
             <artifactId>grpc-netty</artifactId>

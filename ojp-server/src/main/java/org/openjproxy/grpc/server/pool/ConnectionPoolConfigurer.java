@@ -211,7 +211,7 @@ public class ConnectionPoolConfigurer {
      * @param connectionDetails The connection details
      * @return Properties object or null if not available
      */
-    private static Properties extractClientProperties(ConnectionDetails connectionDetails) {
+    public static Properties extractClientProperties(ConnectionDetails connectionDetails) {
         if (connectionDetails.getPropertiesList().isEmpty()) {
             return null;
         }
