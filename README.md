@@ -131,7 +131,7 @@ Welcome to OJP! We appreciate your interest in contributing. This guide will hel
 <a href=https://www.meterian.io/>
 <img width="180px" src="https://www.meterian.io/images/brand/meterian_logo_blue.svg" alt="Materian" />
 </a>
-
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <a href=https://www.youtube.com/@cbrjar>
 <img width="180px" src="/documents/images/cyberJarLogo.png" alt="Materian" />
 </a>
