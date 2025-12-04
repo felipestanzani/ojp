@@ -3,6 +3,7 @@ package openjproxy.jdbc;
 import openjproxy.jdbc.testutil.TestDBUtils;
 import org.junit.Assert;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * SQL Server-specific PreparedStatement integration tests.
  * Tests SQL Server-specific PreparedStatement functionality and parameter handling.
  */
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerPreparedStatementExtensiveTests {
 
     private static boolean isTestDisabled;

@@ -3,6 +3,7 @@ package openjproxy.jdbc;
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
@@ -22,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * These tests verify that OJP can properly handle SQL Server-specific SQL syntax and data types.
  */
 @Slf4j
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerConnectionExtensiveTests {
 
     private static boolean isTestDisabled;

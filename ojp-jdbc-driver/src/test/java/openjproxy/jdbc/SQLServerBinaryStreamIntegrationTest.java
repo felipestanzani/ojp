@@ -4,6 +4,7 @@ import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
 import org.junit.Assert;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * Tests SQL Server-specific binary data types (VARBINARY, IMAGE) and stream handling.
  * Uses TestContainers to provide a SQL Server instance for testing.
  */
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerBinaryStreamIntegrationTest {
 
     private static boolean isTestDisabled;

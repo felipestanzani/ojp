@@ -2,6 +2,7 @@ package openjproxy.jdbc;
 
 import openjproxy.jdbc.testutil.TestDBUtils;
 import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
@@ -10,6 +11,7 @@ import java.sql.*;
 
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerDatabaseMetaDataExtensiveTests {
 
     private static boolean isTestDisabled;

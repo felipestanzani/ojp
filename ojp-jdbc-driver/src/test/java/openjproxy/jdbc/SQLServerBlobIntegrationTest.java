@@ -3,6 +3,7 @@ package openjproxy.jdbc;
 import org.junit.Assert;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ArgumentsSource;
 import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
@@ -24,6 +25,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * SQL Server-specific BLOB-like integration tests.
  * Tests SQL Server VARBINARY(MAX) functionality (equivalent to BLOB).
  */
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerBlobIntegrationTest {
 
     private static boolean isTestDisabled;
