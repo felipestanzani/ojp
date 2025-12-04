@@ -210,7 +210,7 @@
                         <configuration>
                             <shadedArtifactAttached>true</shadedArtifactAttached>
                             <!-- Exclude signature files to prevent "Invalid signature file digest" errors -->
-                            <!-- This is necessary when shading signed JARs (e.g., SQL Server JDBC driver) -->
+                            <!-- This is necessary when shading signed JARs (added dynamically by CI workflows) -->
                             <filters>
                                 <filter>
                                     <artifact>*:*</artifact>
