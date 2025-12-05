@@ -133,5 +133,9 @@ Welcome to OJP! We appreciate your interest in contributing. This guide will hel
 </a>
 &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
 <a href=https://www.youtube.com/@cbrjar>
-<img width="180px" src="/documents/images/cyberJarLogo.png" alt="Materian" />
+<img width="180px" src="/documents/images/cyber_jar_logo.png" alt="Materian" />
+</a>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<a href=https://javachallengers.com/career-diagnosis>
+<img width="150px" src="/documents/images/java_challengers_logo.jpeg" alt="Java Challengers" />
 </a>
