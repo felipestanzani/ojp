@@ -26,9 +26,9 @@
    Navigate to the ojp-jdbc-driver folder first:
    ```bash
    cd ojp-jdbc-driver
-   mvn test -DdisablePostgresXATests
+   mvn test -DenableH2Tests=true
    ```
-**Note:** By default, Postgres, MySQL, MariaDB, and CockroachDB tests are disabled. Only H2 integration tests will run. To run the full set of integration tests, you have to run all the databases locally. Follow the instructions at [Run Local Databases](../../documents/environment-setup/run-local-databases.md)
+**Note:** By default, all database tests (including H2) are disabled. To run specific database tests locally, use the appropriate enable flags (e.g., `-DenableH2Tests=true`, `-DenablePostgresTests=true`). To run the full set of integration tests, you have to run all the databases locally. Follow the instructions at [Run Local Databases](../../documents/environment-setup/run-local-databases.md)
 
 ### Databases with integration tests
 We have comprehensive JDBC integration tests with OJP for the following databases:
@@ -41,7 +41,7 @@ We have comprehensive JDBC integration tests with OJP for the following database
 - DB2
 - H2
 
-The free and open source databases (H2, Postgres, MySQL, MariaDB and CockroachDB) jdbc drivers are packed with OJP and have integration tests always running in our CI pipelines, for proprietary databases as Oracle and SQL Server see specific sections.
+The free and open source databases (H2, Postgres, MySQL, MariaDB and CockroachDB) JDBC drivers are packed with OJP. All database tests are disabled by default and must be explicitly enabled using their respective flags (e.g., `-DenableH2Tests=true`). In CI pipelines, only H2 tests run in the Main CI workflow as a fast fail-fast mechanism. For proprietary databases like Oracle and SQL Server, see specific sections below.
 
 ### Oracle Database Setup (Optional)
 Oracle integration tests require the Oracle JDBC driver and due to licensing restrictions we do not pack it with OJP.
@@ -67,12 +67,33 @@ For detailed CockroachDB setup instructions, see [CockroachDB Testing Guide](../
 - See [run-local-databases.md](documents/environment-setup/run-local-databases.md) for local database setup
 
 ### Test Options
+- `-DenableH2Tests` - Enable H2 integration tests (disabled by default)
 - `-DenablePostgresTests` - Enable PostgreSQL integration tests (disabled by default)
 - `-DenableMySQLTests` - Enable MySQL integration tests (disabled by default)
 - `-DenableMariaDBTests` - Enable MariaDB integration tests (disabled by default)
 - `-DenableCockroachDBTests` - Enable CockroachDB integration tests (disabled by default)
 - `-DenableOracleTests` - Enable Oracle integration tests (disabled by default, requires manual Oracle JDBC driver setup)
 - `-DenableSqlServerTests` - Enable SQL Server integration tests (disabled by default)
+
+### Workflow Ordering and Fail-Fast Strategy
+The CI workflows are organized in a hierarchical order to save CI cycles:
+
+1. **Main CI** - Runs first and only executes H2 database tests
+   - H2 is an embedded database that requires no external services
+   - Runs the fastest and serves as a fail-fast mechanism
+   - If basic functionality is broken, this workflow fails immediately without running expensive database setups
+   - Only enables H2 tests with `-DenableH2Tests=true`
+
+2. **Specialized Workflows** - Run only after Main CI succeeds
+   - Multinode Integration Tests
+   - Oracle Database Testing
+   - SQL Server Integration Tests
+   
+This approach ensures that:
+- Quick feedback on broken code (H2 tests run in seconds)
+- Resource efficiency (expensive database setups only run if basic tests pass)
+- Reduced CI costs and execution time
+- Early detection of major issues before running full test suite
 
 ### Contributing code
 1. Fork the repository
