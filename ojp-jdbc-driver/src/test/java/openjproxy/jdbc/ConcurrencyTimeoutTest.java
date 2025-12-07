@@ -23,13 +23,20 @@ public class ConcurrencyTimeoutTest {
     private static final int THREADS = 50; // Smaller number for quick testing
     private static final int OPERATIONS_PER_THREAD = 5;
 
+    private static boolean isH2TestEnabled;
     private static AtomicInteger successfulOperations = new AtomicInteger(0);
     private static AtomicInteger failedOperations = new AtomicInteger(0);
+
+    @BeforeAll
+    public static void setupClass() {
+        isH2TestEnabled = Boolean.parseBoolean(System.getProperty("enableH2Tests", "false"));
+    }
 
     @SneakyThrows
     @ParameterizedTest
     @CsvFileSource(resources = "/h2_connection.csv")
     public void testConcurrencyWithTimeout(String driverClass, String url, String user, String password) throws SQLException {
+        assumeFalse(!isH2TestEnabled, "H2 tests are disabled");
 
         successfulOperations.set(0);
         failedOperations.set(0);

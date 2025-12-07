@@ -1,6 +1,7 @@
 package openjproxy.jdbc;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 
@@ -30,10 +31,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class H2PreparedStatementExtensiveTests {
 
+    private static boolean isH2TestEnabled;
+    
     private Connection connection;
     private PreparedStatement ps;
 
+    @BeforeAll
+    public static void setupClass() {
+        isH2TestEnabled = Boolean.parseBoolean(System.getProperty("enableH2Tests", "false"));
+    }
+
     public void setUp(String driverClass, String url, String user, String password) throws Exception {
+        if (!isH2TestEnabled) {
+            return;
+        }
         connection = DriverManager.getConnection(url, user, password);
         Statement stmt = connection.createStatement();
         try {

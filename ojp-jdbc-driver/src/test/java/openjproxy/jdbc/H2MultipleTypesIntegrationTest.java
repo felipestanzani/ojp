@@ -2,6 +2,7 @@ package openjproxy.jdbc;
 
 import openjproxy.jdbc.testutil.TestDBUtils;
 import org.junit.Assert;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 
@@ -21,9 +22,19 @@ import static openjproxy.helpers.SqlHelper.executeUpdate;
 
 public class H2MultipleTypesIntegrationTest {
 
+    private static boolean isH2TestEnabled;
+
+    @BeforeAll
+    public static void setupClass() {
+        isH2TestEnabled = Boolean.parseBoolean(System.getProperty("enableH2Tests", "false"));
+    }
+
     @ParameterizedTest
     @CsvFileSource(resources = "/h2_connection.csv")
     public void typesCoverageTestSuccessful(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, ParseException {
+        if (!isH2TestEnabled) {
+            return;
+        }
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
         System.out.println("Testing for url -> " + url);

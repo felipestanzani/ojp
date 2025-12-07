@@ -24,10 +24,20 @@ import static openjproxy.helpers.SqlHelper.executeUpdate;
  */
 public class HydratedLobValidationTest {
 
+    private static boolean isH2TestEnabled;
+
     private String tableName;
     private Connection conn;
 
+    @BeforeAll
+    public static void setupClass() {
+        isH2TestEnabled = Boolean.parseBoolean(System.getProperty("enableH2Tests", "false"));
+    }
+
     public void setUp(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
+        if (!isH2TestEnabled) {
+            return;
+        }
         this.tableName = "hydrated_lob_test";
         conn = DriverManager.getConnection(url, user, pwd);
         

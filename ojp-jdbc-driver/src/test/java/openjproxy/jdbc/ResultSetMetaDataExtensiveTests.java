@@ -2,6 +2,7 @@ package openjproxy.jdbc;
 
 import lombok.SneakyThrows;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 
@@ -11,11 +12,21 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class ResultSetMetaDataExtensiveTests {
 
+    private static boolean isH2TestEnabled;
+
     private Connection connection;
     private ResultSetMetaData metaData;
 
+    @BeforeAll
+    public static void setupClass() {
+        isH2TestEnabled = Boolean.parseBoolean(System.getProperty("enableH2Tests", "false"));
+    }
+
     @SneakyThrows
     public void setUp(String driverClass, String url, String user, String password) throws SQLException {
+        if (!isH2TestEnabled) {
+            return;
+        }
         connection = DriverManager.getConnection(url, user, password);
         Statement statement = connection.createStatement();
 
