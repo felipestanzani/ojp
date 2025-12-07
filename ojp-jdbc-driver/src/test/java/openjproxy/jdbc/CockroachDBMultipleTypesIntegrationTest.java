@@ -21,17 +21,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 public class CockroachDBMultipleTypesIntegrationTest {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void typesCoverageTestSuccessful(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, ParseException {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
@@ -133,7 +133,7 @@ public class CockroachDBMultipleTypesIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testCockroachDBSpecificTypes(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         Connection conn = DriverManager.getConnection(url, user, pwd);
 

@@ -30,16 +30,16 @@ public class CockroachDBResultSetTest {
     private Statement statement;
     private ResultSet resultSet;
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     @SneakyThrows
     public void setUp(String driverClass, String url, String user, String pwd) throws SQLException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
 
         // Create CockroachDB database connection
         connection = DriverManager.getConnection(url, user, pwd);
@@ -154,7 +154,7 @@ public class CockroachDBResultSetTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testCockroachDBNullHandling(String driverClass, String url, String user, String pwd) throws SQLException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
         
         connection = DriverManager.getConnection(url, user, pwd);
         statement = connection.createStatement();

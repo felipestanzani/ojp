@@ -38,17 +38,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 public class PostgresConnectionExtensiveTests {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
     private Connection connection;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disablePostgresTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enablePostgresTests", "false"));
     }
 
     @SneakyThrows
     public void setUp(String driverClass, String url, String user, String password) throws SQLException {
-        assumeFalse(isTestDisabled, "Postgres tests are disabled");
+        assumeFalse(!isTestEnabled, "Postgres tests are disabled");
         connection = DriverManager.getConnection(url, user, password);
     }
 

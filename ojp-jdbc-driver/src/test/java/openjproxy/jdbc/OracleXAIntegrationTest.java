@@ -41,7 +41,7 @@ public class OracleXAIntegrationTest {
     }
 
     public void setUp(String driverClass, String url, String user, String password) throws SQLException {
-        assumeFalse(isTestDisabled, "Oracle XA tests are disabled. Enable with -DdisableOracleTests=false");
+        assumeFalse(isTestDisabled, "Oracle XA tests are disabled. Enable with -DenableOracleTests=true");
 
         // Create XA DataSource
         OjpXADataSource xaDataSource = new OjpXADataSource();

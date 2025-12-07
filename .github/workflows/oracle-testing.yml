@@ -144,7 +144,7 @@ jobs:
         run: mvn clean install -pl ojp-jdbc-driver -am -DskipTests -Dgpg.skip=true
 
       - name: Test (ojp-jdbc-driver) with Oracle enabled
-        run: mvn test -pl ojp-jdbc-driver -Dgpg.skip=true -DenableOracleTests -DdisablePostgresTests -DdisableMySQLTests -DdisableMariaDBTests -DdisableCockroachDBTests
+        run: mvn test -pl ojp-jdbc-driver -Dgpg.skip=true -DenableOracleTests
 
       - name: Show ojp-server.log
         if: always()  # ensures it runs even if previous steps fail

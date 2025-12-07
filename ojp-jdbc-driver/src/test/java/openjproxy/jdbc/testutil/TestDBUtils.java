@@ -613,17 +613,17 @@ public class TestDBUtils {
 
     /**
      * Checks if the current test should be skipped due to database-specific flags.
-     * @param disablePostgresTests Whether Postgres tests are disabled
-     * @param disableMySQLTests Whether MySQL tests are disabled
-     * @param disableOracleTests Whether Oracle tests are disabled
+     * @param enablePostgresTests Whether Postgres tests are enabled
+     * @param enableMySQLTests Whether MySQL tests are enabled
+     * @param enableOracleTests Whether Oracle tests are enabled
      * @param isPostgresTest Whether this is a Postgres test
      * @param isMySQLTest Whether this is a MySQL test
      * @param isOracleTest Whether this is an Oracle test
      * @return true if the test should be skipped
      */
-    public static boolean shouldSkipTest(boolean disablePostgresTests, boolean disableMySQLTests, boolean disableOracleTests,
+    public static boolean shouldSkipTest(boolean enablePostgresTests, boolean enableMySQLTests, boolean enableOracleTests,
                                          boolean isPostgresTest, boolean isMySQLTest, boolean isOracleTest) {
-        return (disablePostgresTests && isPostgresTest) || (disableMySQLTests && isMySQLTest) || (disableOracleTests && isOracleTest);
+        return (!enablePostgresTests && isPostgresTest) || (!enableMySQLTests && isMySQLTest) || (!enableOracleTests && isOracleTest);
     }
 
 

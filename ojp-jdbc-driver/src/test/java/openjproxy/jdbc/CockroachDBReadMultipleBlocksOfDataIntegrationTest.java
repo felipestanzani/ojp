@@ -19,17 +19,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  */
 public class CockroachDBReadMultipleBlocksOfDataIntegrationTest {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testCockroachDBMultiplePagesOfRows(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
         
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
@@ -77,7 +77,7 @@ public class CockroachDBReadMultipleBlocksOfDataIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testCockroachDBLargeDataSetPagination(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
         
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
@@ -136,7 +136,7 @@ public class CockroachDBReadMultipleBlocksOfDataIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testCockroachDBLargeResultSetWithVariousTypes(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
         
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
@@ -197,7 +197,7 @@ public class CockroachDBReadMultipleBlocksOfDataIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testCockroachDBFetchSizePerformance(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
         
         Connection conn = DriverManager.getConnection(url, user, pwd);
 

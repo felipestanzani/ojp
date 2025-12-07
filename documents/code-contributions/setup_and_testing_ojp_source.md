@@ -26,9 +26,9 @@
    Navigate to the ojp-jdbc-driver folder first:
    ```bash
    cd ojp-jdbc-driver
-   mvn test -DdisablePostgresTests -DdisableMySQLTests -DdisableMariaDBTests -DdisableCockroachDBTests -DdisablePostgresXATests
+   mvn test -DdisablePostgresXATests
    ```
-**Note:** With the disable flags only H2 integration tests will run, to run the full set of integration tests you have to run all the databases locally, follow the instructions at [Run Local Databases](../../documents/environment-setup/run-local-databases.md)
+**Note:** By default, Postgres, MySQL, MariaDB, and CockroachDB tests are disabled. Only H2 integration tests will run. To run the full set of integration tests, you have to run all the databases locally. Follow the instructions at [Run Local Databases](../../documents/environment-setup/run-local-databases.md)
 
 ### Databases with integration tests
 We have comprehensive JDBC integration tests with OJP for the following databases:
@@ -67,8 +67,10 @@ For detailed CockroachDB setup instructions, see [CockroachDB Testing Guide](../
 - See [run-local-databases.md](documents/environment-setup/run-local-databases.md) for local database setup
 
 ### Test Options
-- `-DdisablePostgresTests` - Skip PostgreSQL integration tests
-- `-DdisableCockroachDBTests` - Skip CockroachDB integration tests
+- `-DenablePostgresTests` - Enable PostgreSQL integration tests (disabled by default)
+- `-DenableMySQLTests` - Enable MySQL integration tests (disabled by default)
+- `-DenableMariaDBTests` - Enable MariaDB integration tests (disabled by default)
+- `-DenableCockroachDBTests` - Enable CockroachDB integration tests (disabled by default)
 - `-DenableOracleTests` - Enable Oracle integration tests (disabled by default, requires manual Oracle JDBC driver setup)
 - `-DenableSqlServerTests` - Enable SQL Server integration tests (disabled by default)
 

@@ -24,17 +24,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  */
 public class CockroachDBBlobIntegrationTest {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
     private String tableName;
     private Connection conn;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     public void setUp(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         this.tableName = "cockroachdb_blob_test";
         conn = DriverManager.getConnection(url, user, pwd);

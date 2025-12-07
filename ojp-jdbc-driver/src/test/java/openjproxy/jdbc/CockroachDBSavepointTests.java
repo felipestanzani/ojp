@@ -18,17 +18,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 public class CockroachDBSavepointTests {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
     private Connection connection;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     @SneakyThrows
     public void setUp(String driverClass, String url, String user, String pwd) throws SQLException {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         connection = DriverManager.getConnection(url, user, pwd);
         connection.setAutoCommit(true);

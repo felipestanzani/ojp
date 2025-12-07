@@ -11,16 +11,16 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 public class CockroachDBDatabaseMetaDataExtensiveTests {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
     private static Connection connection;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     public void setUp(String driverClass, String url, String user, String password) throws Exception {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         connection = DriverManager.getConnection(url, user, password);
         TestDBUtils.createBasicTestTable(connection, "cockroachdb_db_metadata_test", TestDBUtils.SqlSyntax.COCKROACHDB, true);

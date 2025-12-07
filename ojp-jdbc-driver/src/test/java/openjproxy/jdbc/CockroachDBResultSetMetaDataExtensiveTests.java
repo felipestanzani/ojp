@@ -13,18 +13,18 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
 public class CockroachDBResultSetMetaDataExtensiveTests {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
     private Connection connection;
     private ResultSetMetaData metaData;
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     @SneakyThrows
     public void setUp(String driverClass, String url, String user, String password) throws SQLException {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         connection = DriverManager.getConnection(url, user, password);
         Statement statement = connection.createStatement();
@@ -175,7 +175,7 @@ public class CockroachDBResultSetMetaDataExtensiveTests {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testResultSetMetaDataWithNullValues(String driverClass, String url, String user, String password) throws SQLException {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         connection = DriverManager.getConnection(url, user, password);
         Statement statement = connection.createStatement();
@@ -206,7 +206,7 @@ public class CockroachDBResultSetMetaDataExtensiveTests {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testResultSetMetaDataWithComplexTypes(String driverClass, String url, String user, String password) throws SQLException {
-        assumeFalse(isTestDisabled, "CockroachDB tests are disabled");
+        assumeFalse(!isTestEnabled, "CockroachDB tests are disabled");
         
         connection = DriverManager.getConnection(url, user, password);
         Statement statement = connection.createStatement();

@@ -23,17 +23,17 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  */
 public class CockroachDBBinaryStreamIntegrationTest {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
 
     @BeforeAll
     public static void setup() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
     }
 
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void createAndReadingBinaryStreamSuccessful(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
 
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
@@ -94,7 +94,7 @@ public class CockroachDBBinaryStreamIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void createAndReadingLargeBinaryStreamSuccessful(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
 
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
@@ -147,7 +147,7 @@ public class CockroachDBBinaryStreamIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/cockroachdb_connection.csv")
     public void testBinaryStreamWithNullValues(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
-        assumeFalse(isTestDisabled, "Skipping CockroachDB tests");
+        assumeFalse(!isTestEnabled, "Skipping CockroachDB tests");
 
         Connection conn = DriverManager.getConnection(url, user, pwd);
 

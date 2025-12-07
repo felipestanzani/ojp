@@ -19,17 +19,17 @@ import static openjproxy.helpers.SqlHelper.executeUpdate;
 
 public class BinaryStreamIntegrationTest {
 
-    private static boolean isPostgresTestDisabled;
+    private static boolean isPostgresTestEnabled;
 
     @BeforeAll
     public static void setup() {
-        isPostgresTestDisabled = Boolean.parseBoolean(System.getProperty("disablePostgresTests", "false"));
+        isPostgresTestEnabled = Boolean.parseBoolean(System.getProperty("enablePostgresTests", "false"));
     }
 
     @ParameterizedTest
     @CsvFileSource(resources = "/h2_postgres_connections.csv")
     public void createAndReadingBinaryStreamSuccessful(String driverClass, String url, String user, String pwd, boolean isXA) throws SQLException, ClassNotFoundException, IOException {
-        if (isPostgresTestDisabled && url.contains("postgresql")) {
+        if (!isPostgresTestEnabled && url.contains("postgresql")) {
             return;
         }
 
@@ -99,7 +99,7 @@ public class BinaryStreamIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/h2_postgres_connections.csv")
     public void createAndReadingLargeBinaryStreamSuccessful(String driverClass, String url, String user, String pwd, boolean isXA) throws SQLException, ClassNotFoundException, IOException {
-        if (isPostgresTestDisabled && url.contains("postgresql")) {
+        if (!isPostgresTestEnabled && url.contains("postgresql")) {
             return;
         }
 

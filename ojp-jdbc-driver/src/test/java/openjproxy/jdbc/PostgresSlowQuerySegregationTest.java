@@ -30,7 +30,7 @@ public class PostgresSlowQuerySegregationTest {
     private static final int THREADS = 3; // Number of worker threads
     private static final int RAMPUP_MS = 30 * 1000; // 30 seconds Ramp-up window in milliseconds
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
     private static Queue<Long> queryDurations = new ConcurrentLinkedQueue<>();
     private static AtomicInteger totalQueries = new AtomicInteger(0);
     private static AtomicInteger failedQueries = new AtomicInteger(0);
@@ -38,7 +38,7 @@ public class PostgresSlowQuerySegregationTest {
 
     @BeforeAll
     public static void checkTestConfiguration() {
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disablePostgresTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enablePostgresTests", "false"));
     }
 
     @SneakyThrows
@@ -52,7 +52,7 @@ public class PostgresSlowQuerySegregationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/postgres_connection.csv")
     public void runTests(String driverClass, String url, String user, String password) throws SQLException {
-        assumeFalse(isTestDisabled, "Postgres tests are disabled");
+        assumeFalse(!isTestEnabled, "Postgres tests are disabled");
         
         this.setUp();
         // 1. Schema and seeding (not timed)

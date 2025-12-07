@@ -30,18 +30,18 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 @Slf4j
 public class PostgresXAIntegrationTest {
 
-    private static boolean isTestDisabled;
+    private static boolean isTestEnabled;
     private XAConnection xaConnection;
     private Connection connection;
 
     @BeforeAll
     public static void checkTestConfiguration() {
         // Enable by default for testing
-        isTestDisabled = Boolean.parseBoolean(System.getProperty("disablePostgresTests", "false"));
+        isTestEnabled = Boolean.parseBoolean(System.getProperty("enablePostgresTests", "false"));
     }
 
     public void setUp(String driverClass, String url, String user, String password) throws SQLException {
-        assumeFalse(isTestDisabled, "Postgres XA tests are disabled. Enable with -DdisablePostgresTests=false");
+        assumeFalse(!isTestEnabled, "Postgres XA tests are disabled. Enable with -DenablePostgresTests=true");
         
         // Create XA DataSource
         OjpXADataSource xaDataSource = new OjpXADataSource();
