@@ -18,10 +18,10 @@ import static openjproxy.helpers.SqlHelper.executeUpdate;
 @Slf4j
 public class BasicCrudIntegrationTest {
 
-    private static boolean isPostgresTestDisabled;
-    private static boolean isMySQLTestDisabled;
-    private static boolean isMariaDBTestDisabled;
-    private static boolean isCockroachDBTestDisabled;
+    private static boolean isPostgresTestEnabled;
+    private static boolean isMySQLTestEnabled;
+    private static boolean isMariaDBTestEnabled;
+    private static boolean isCockroachDBTestEnabled;
     private static boolean isOracleTestEnabled;
     private static boolean isSqlServerTestEnabled;
     private static boolean isDb2TestEnabled;
@@ -29,10 +29,10 @@ public class BasicCrudIntegrationTest {
 
     @BeforeAll
     public static void setup() {
-        isPostgresTestDisabled = Boolean.parseBoolean(System.getProperty("disablePostgresTests", "false"));
-        isMySQLTestDisabled = Boolean.parseBoolean(System.getProperty("disableMySQLTests", "false"));
-        isMariaDBTestDisabled = Boolean.parseBoolean(System.getProperty("disableMariaDBTests", "false"));
-        isCockroachDBTestDisabled = Boolean.parseBoolean(System.getProperty("disableCockroachDBTests", "false"));
+        isPostgresTestEnabled = Boolean.parseBoolean(System.getProperty("enablePostgresTests", "false"));
+        isMySQLTestEnabled = Boolean.parseBoolean(System.getProperty("enableMySQLTests", "false"));
+        isMariaDBTestEnabled = Boolean.parseBoolean(System.getProperty("enableMariaDBTests", "false"));
+        isCockroachDBTestEnabled = Boolean.parseBoolean(System.getProperty("enableCockroachDBTests", "false"));
         isOracleTestEnabled = Boolean.parseBoolean(System.getProperty("enableOracleTests", "false"));
         isSqlServerTestEnabled = Boolean.parseBoolean(System.getProperty("enableSqlServerTests", "false"));
         isDb2TestEnabled = Boolean.parseBoolean(System.getProperty("enableDb2Tests", "false"));
@@ -41,20 +41,20 @@ public class BasicCrudIntegrationTest {
     @ParameterizedTest
     @CsvFileSource(resources = "/h2_postgres_mysql_mariadb_oracle_sqlserver_connections.csv")
     public void crudTestSuccessful(String driverClass, String url, String user, String pwd, boolean isXA) throws SQLException, ClassNotFoundException {
-        // Skip PostgreSQL tests if disabled
-        if (url.toLowerCase().contains("postgresql") && isPostgresTestDisabled) {
+        // Skip PostgreSQL tests if not enabled
+        if (url.toLowerCase().contains("postgresql") && !isPostgresTestEnabled) {
             Assumptions.assumeFalse(true, "Skipping Postgres tests");
             tablePrefix = "postgres_";
         }
         
-        // Skip MySQL tests if disabled
-        if (url.toLowerCase().contains("mysql") && isMySQLTestDisabled) {
+        // Skip MySQL tests if not enabled
+        if (url.toLowerCase().contains("mysql") && !isMySQLTestEnabled) {
             Assumptions.assumeFalse(true, "Skipping MySQL tests");
             tablePrefix = "mysql_";
         }
 
         // Skip MariaDB tests if disabled
-        if (url.toLowerCase().contains("mariadb") && isMariaDBTestDisabled) {
+        if (url.toLowerCase().contains("mariadb") && !isMariaDBTestEnabled) {
             Assumptions.assumeFalse(true, "Skipping MariaDB tests");
             tablePrefix = "mariadb_";
         }
@@ -78,7 +78,7 @@ public class BasicCrudIntegrationTest {
         }
 
         // Skip CockroachDB tests if disabled  
-        if (url.toLowerCase().contains("26257") && isCockroachDBTestDisabled) {
+        if (url.toLowerCase().contains("26257") && !isCockroachDBTestEnabled) {
             Assumptions.assumeFalse(true, "Skipping CockroachDB tests");
             tablePrefix = "cockroachdb_";
         }

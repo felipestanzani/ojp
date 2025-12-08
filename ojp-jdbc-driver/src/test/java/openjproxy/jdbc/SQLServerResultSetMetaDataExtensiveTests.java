@@ -3,8 +3,10 @@ package openjproxy.jdbc;
 import openjproxy.jdbc.testutil.TestDBUtils;
 import org.junit.Assert;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvFileSource;
+import org.junit.jupiter.params.provider.ArgumentsSource;
+import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
 
 import java.sql.*;
 
@@ -14,6 +16,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * SQL Server-specific ResultSetMetaData integration tests.
  * Tests SQL Server-specific metadata functionality for result sets.
  */
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerResultSetMetaDataExtensiveTests {
 
     private static boolean isTestDisabled;
@@ -24,7 +27,7 @@ public class SQLServerResultSetMetaDataExtensiveTests {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerResultSetMetaDataBasics(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -70,7 +73,7 @@ public class SQLServerResultSetMetaDataExtensiveTests {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerSpecificDataTypes(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -128,7 +131,7 @@ public class SQLServerResultSetMetaDataExtensiveTests {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerColumnProperties(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -192,7 +195,7 @@ public class SQLServerResultSetMetaDataExtensiveTests {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerTableAndSchemaInfo(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -241,7 +244,7 @@ public class SQLServerResultSetMetaDataExtensiveTests {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerAliasedColumns(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -279,7 +282,7 @@ public class SQLServerResultSetMetaDataExtensiveTests {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerNullabilityAndUpdatability(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         

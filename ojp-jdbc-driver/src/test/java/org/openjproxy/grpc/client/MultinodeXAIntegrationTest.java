@@ -13,7 +13,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 import org.openjproxy.jdbc.xa.OjpXADataSource;
 
-import javax.transaction.UserTransaction;
+import jakarta.transaction.UserTransaction;
 import java.math.BigDecimal;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

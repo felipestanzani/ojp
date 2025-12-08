@@ -3,8 +3,10 @@ package openjproxy.jdbc;
 import org.junit.Assert;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvFileSource;
+import org.junit.jupiter.params.provider.ArgumentsSource;
+import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -23,6 +25,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * SQL Server-specific BLOB-like integration tests.
  * Tests SQL Server VARBINARY(MAX) functionality (equivalent to BLOB).
  */
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerBlobIntegrationTest {
 
     private static boolean isTestDisabled;
@@ -53,7 +56,7 @@ public class SQLServerBlobIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerBlobCreationAndRetrieval(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
         setUp(driverClass, url, user, pwd);
 
@@ -95,7 +98,7 @@ public class SQLServerBlobIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerLargeBlobHandling(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
         setUp(driverClass, url, user, pwd);
 
@@ -143,7 +146,7 @@ public class SQLServerBlobIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerBlobBinaryStream(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
         setUp(driverClass, url, user, pwd);
 
@@ -191,7 +194,7 @@ public class SQLServerBlobIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerBlobUpdate(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
         setUp(driverClass, url, user, pwd);
 
@@ -242,7 +245,7 @@ public class SQLServerBlobIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerBlobNullHandling(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException {
         setUp(driverClass, url, user, pwd);
 
@@ -278,7 +281,7 @@ public class SQLServerBlobIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerEmptyBlob(String driverClass, String url, String user, String pwd) throws SQLException, ClassNotFoundException, IOException {
         setUp(driverClass, url, user, pwd);
 

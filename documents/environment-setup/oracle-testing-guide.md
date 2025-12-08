@@ -14,7 +14,7 @@ This document explains how to set up and run Oracle Database tests with OJP.
 Use the community Oracle XE image for testing:
 
 ```bash
-docker run --name ojp-oracle -e ORACLE_PASSWORD=testpassword -e APP_USER=testuser -e APP_USER_PASSWORD=testpassword -d -p 1521:1521 gvenzl/oracle-xe:21-slim
+docker run --name ojp-oracle -e ORACLE_PASSWORD=testpassword -e APP_USER=testuser -e APP_USER_PASSWORD=testpassword -d -p 1521:1521 gvenzl/oracle-xe:21-full
 ```
 
 Wait for the database to fully start (may take a few minutes).
@@ -42,7 +42,7 @@ To run only Oracle tests:
 
 ```bash
 cd ojp-jdbc-driver
-mvn test -DenableOracleTests -DdisablePostgresTests -DdisableMySQLTests -DdisableMariaDBTests
+mvn test -DenableOracleTests
 ```
 
 ## Test Configuration Files

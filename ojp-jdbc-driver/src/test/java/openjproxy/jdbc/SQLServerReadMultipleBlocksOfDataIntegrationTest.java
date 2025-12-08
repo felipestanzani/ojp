@@ -4,8 +4,10 @@ import openjproxy.jdbc.testutil.TestDBUtils;
 import org.junit.Assert;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
+import org.junit.jupiter.api.condition.EnabledIf;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvFileSource;
+import org.junit.jupiter.params.provider.ArgumentsSource;
+import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -18,6 +20,7 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
  * SQL Server-specific tests for reading multiple blocks of data.
  * Tests SQL Server-specific large result set handling and streaming capabilities.
  */
+@EnabledIf("openjproxy.jdbc.testutil.SQLServerTestContainer#isEnabled")
 public class SQLServerReadMultipleBlocksOfDataIntegrationTest {
 
     private static boolean isTestDisabled;
@@ -28,7 +31,7 @@ public class SQLServerReadMultipleBlocksOfDataIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerLargeResultSetReading(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -91,7 +94,7 @@ public class SQLServerReadMultipleBlocksOfDataIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerStreamingLargeData(String driverClass, String url, String user, String pwd) throws SQLException, IOException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -166,7 +169,7 @@ public class SQLServerReadMultipleBlocksOfDataIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerPaginatedReading(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -226,7 +229,7 @@ public class SQLServerReadMultipleBlocksOfDataIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerCursorBasedReading(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
@@ -271,7 +274,7 @@ public class SQLServerReadMultipleBlocksOfDataIntegrationTest {
     }
 
     @ParameterizedTest
-    @CsvFileSource(resources = "/sqlserver_connections.csv")
+    @ArgumentsSource(SQLServerConnectionProvider.class)
     public void testSqlServerConcurrentReading(String driverClass, String url, String user, String pwd) throws SQLException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
         
