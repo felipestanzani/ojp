@@ -84,23 +84,19 @@ The CI workflows are organized in a hierarchical order to save CI cycles:
    - If basic functionality is broken, this workflow fails immediately without running expensive database setups
    - Only enables H2 tests with `-DenableH2Tests=true`
 
-2. **Specialized Workflows** - Run only after Main CI succeeds
+2. **Specialized Test Jobs** - Run only after Main CI succeeds (using `needs: [build-test]`)
    - Multinode Integration Tests
-   - Oracle Database Testing
-   - SQL Server Integration Tests
+   - Oracle Database Testing (JDK 11, 17, 21, 22)
+   - SQL Server Integration Tests (JDK 11, 17, 21, 22)
 
-**Important Note:** Due to a GitHub Actions limitation, the sequential workflow ordering (specialized workflows after Main CI) only works when workflow definitions exist on the default branch. This means:
-- **On main branch**: Workflows run sequentially - specialized workflows only after Main CI succeeds (cost-saving fail-fast)
-- **On PR branches**: Workflows run in parallel to enable testing of workflow changes before merge
-
-Once this PR is merged to main, all future PRs will benefit from the sequential execution on the main branch.
+**Implementation**: All jobs are consolidated into a single workflow file (`.github/workflows/main.yml`) with job dependencies using the `needs` keyword. This ensures sequential execution works on **all branches** (PRs, main, feature branches) without relying on GitHub Actions `workflow_run` triggers.
    
 This approach ensures that:
 - Quick feedback on broken code (H2 tests run in seconds)
-- Resource efficiency on main branch after merge (expensive database setups only run if basic tests pass)
-- Ability to test workflow changes in PRs (runs in parallel during PR review)
-- Reduced CI costs and execution time on main branch
+- Resource efficiency (expensive database setups only run if basic tests pass)
+- Reduced CI costs and execution time
 - Early detection of major issues before running full test suite
+- Sequential execution works consistently on all branches including PRs
 
 ### Contributing code
 1. Fork the repository

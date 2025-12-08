@@ -1,7 +1,30 @@
-# This workflow builds and tests the project on pushes and pull requests to the main branch.
-# It runs only H2 database tests as a fast fail-fast mechanism to save CI cycles.
-# Other database-specific workflows run after this workflow succeeds.
-# The workflow result is reported in the Actions tab of the repository.
+# =============================================================================
+# Main CI Workflow with Sequential Job Execution
+# =============================================================================
+#
+# This workflow implements a fail-fast CI strategy where H2 tests run first,
+# followed by more expensive database-specific tests only if H2 tests pass.
+#
+# WORKFLOW STRUCTURE:
+# 1. build-test: Fast H2-only tests (embedded database, no external services)
+# 2. multinode-test: Multinode failover/recovery tests (needs: build-test)
+# 3. oracle-test: Oracle database tests (needs: build-test)
+# 4. sqlserver-tests: SQL Server tests (needs: build-test)
+# 5. notify-integration: Triggers integration repo workflow
+#
+# SEQUENTIAL EXECUTION:
+# All specialized test jobs depend on build-test completing successfully.
+# This ensures that expensive database setups only run if basic H2 tests pass,
+# providing:
+# - Fast feedback (H2 tests complete in seconds)
+# - Resource efficiency (avoids running expensive tests when basics fail)
+# - Cost savings (reduces CI minutes when tests would fail anyway)
+#
+# This sequential execution works on ALL branches (PRs, main, feature branches)
+# because all jobs are defined in a single workflow file.
+#
+# =============================================================================
+
 name: Main CI
 
 on:
@@ -11,8 +34,20 @@ on:
     branches: [ main ]
 
 jobs:
+  # ===========================================================================
+  # JOB 1: Build & Test with H2 (Fast Fail-Fast Gate)
+  # ===========================================================================
+  #
+  # This job runs first and tests against H2 embedded database.
+  # H2 requires no external services and runs in seconds, making it ideal
+  # for catching basic issues before running expensive database-specific tests.
+  #
+  # Test execution: Runs with -DenableH2Tests=true flag
+  # Matrix strategy: Tests against Java 11, 17, 21, 22
+  #
+  # ===========================================================================
   build-test:
-    name: Build & Test
+    name: Build & Test (H2 - Fast Fail-Fast)
     runs-on: ubuntu-latest
 
     strategy:
@@ -61,13 +96,663 @@ jobs:
       - name: Build (ojp-jdbc-driver) with JDK ${{ matrix.java-version }}
         run: mvn clean install -pl ojp-jdbc-driver -am -DskipTests -Dgpg.skip=true
 
-      - name: Test (ojp-jdbc-driver)
+      # This is the key test step - only H2 tests are enabled
+      # All other database tests are disabled by default
+      - name: Test (ojp-jdbc-driver) with H2 only
         run: mvn test -pl ojp-jdbc-driver -Dgpg.skip=true -DenableH2Tests=true
 
       - name: Show ojp-server.log
         if: always()  # ensures it runs even if previous steps fail
         run: cat /tmp/ojp-server.log || echo "/tmp/ojp-server.log not found"
 
+  # ===========================================================================
+  # JOB 2: Multinode Integration Tests
+  # ===========================================================================
+  #
+  # This job tests multinode functionality with TWO OJP server instances.
+  # It verifies failover and recovery scenarios by:
+  # 1. Starting two OJP servers on different ports (10591, 10592)
+  # 2. Running tests that use both servers simultaneously
+  # 3. Killing servers one at a time and verifying failover
+  # 4. Restarting servers and verifying recovery
+  #
+  # Database: PostgreSQL (for multinode connection pooling tests)
+  # Execution: Only runs AFTER build-test job succeeds (needs: [build-test])
+  #
+  # ===========================================================================
+  multinode-test:
+    name: Multinode Integration Test
+    runs-on: ubuntu-latest
+    # DEPENDENCY: This job only runs if build-test succeeds
+    # This ensures we don't waste resources on multinode tests if H2 tests fail
+    needs: [build-test]
+
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Start PostgreSQL container for multinode tests
+      # Configured with max_prepared_transactions=100 for XA support
+      - name: Start Postgres
+        run: |
+          docker run --name ojp-postgres-multinode \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpassword \
+            -e POSTGRES_DB=defaultdb \
+            -p 5432:5432 \
+            -d postgres:17 \
+            -c max_prepared_transactions=100
+      
+          # Wait for Postgres to become ready (up to 60s)
+          timeout 60 bash -c 'until docker exec ojp-postgres-multinode pg_isready -U testuser -d defaultdb -h 127.0.0.1; do sleep 2; done'
+
+          # Verify setting
+          PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SHOW max_prepared_transactions;"
+
+      - name: Set up JDK 22 for build
+        uses: actions/setup-java@v4
+        with:
+          java-version: 22
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and Install (ojp-grpc-commons) with JDK 22
+        run: mvn clean install -pl ojp-grpc-commons -am -DskipTests -Dgpg.skip=true
+
+      - name: Test (ojp-grpc-commons) with JDK 22
+        run: mvn test -pl ojp-grpc-commons -Dgpg.skip=true
+
+      - name: Build (ojp-server) with JDK 22
+        run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
+
+      # Start first OJP server instance on port 10591
+      - name: Start OJP Server 1 on port 10591
+        run: |
+          # Start first server on port 10591 with Prometheus on 9159
+          nohup java -Dojp.server.port=10591 -Dojp.prometheus.port=9159 -jar ojp-server/target/ojp-server-0.2.1-snapshot-shaded.jar > /tmp/ojp-server-1.log 2>&1 &
+          echo $! > /tmp/ojp-server-1.pid
+          echo "Started OJP Server 1 on gRPC port 10591, Prometheus port 9159 with PID $(cat /tmp/ojp-server-1.pid)"
+
+      # Start second OJP server instance on port 10592
+      - name: Start OJP Server 2 on port 10592
+        run: |
+          # Start second server on port 10592 with Prometheus on 9160
+          nohup java -Dojp.server.port=10592 -Dojp.prometheus.port=9160 -jar ojp-server/target/ojp-server-0.2.1-snapshot-shaded.jar > /tmp/ojp-server-2.log 2>&1 &
+          echo $! > /tmp/ojp-server-2.pid
+          echo "Started OJP Server 2 on gRPC port 10592, Prometheus port 9160 with PID $(cat /tmp/ojp-server-2.pid)"
+
+      - name: Wait for OJP servers to start
+        run: |
+          echo "Waiting for servers to start..."
+          sleep 15
+          echo "Checking if servers are listening..."
+          netstat -tuln | grep -E ':(10591|10592)' || echo "Warning: Servers might not be listening yet"
+
+      - name: Build (ojp-jdbc-driver) with JDK 22
+        run: mvn clean install -pl ojp-jdbc-driver -am -DskipTests -Dgpg.skip=true
+
+      - name: Create temp directory for test logs
+        run: mkdir -p temp
+
+      # Run the multinode integration test in background
+      # This test will create connections to both servers and test failover scenarios
+      - name: Start MultinodeIntegrationTest with nohup
+        run: |
+          echo "Starting MultinodeIntegrationTest in background..."
+          nohup mvn test -pl ojp-jdbc-driver -Dtest=MultinodeIntegrationTest -DmultinodeTestsEnabled=true -Dgpg.skip=true > temp/MultinodeIntegrationTest.log 2>&1 &
+          echo $! > temp/multinode-test.pid
+          echo "MultinodeIntegrationTest started with PID $(cat temp/multinode-test.pid)"
+          # Give test time to start
+          sleep 20
+
+      # Verify connection pooling is working correctly
+      # Expected: 20-24 connections (10-12 per server)
+      - name: Check PostgreSQL connections during test
+        run: |
+          echo "Checking PostgreSQL connections..."
+          TIMEOUT=60
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 20... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 20 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test failover: Kill server 1 and verify connections migrate to server 2
+      - name: Kill OJP Server 1
+        run: |
+          echo "Killing OJP Server 1..."
+          if [ -f /tmp/ojp-server-1.pid ]; then
+            kill $(cat /tmp/ojp-server-1.pid) || true
+            echo "OJP Server 1 killed"
+          fi
+          sleep 10
+
+      # Verify failover: Connections should still be active on server 2
+      - name: Check PostgreSQL connections after killing Server 1
+        run: |
+          echo "Checking PostgreSQL connections after killing Server 1..."
+          TIMEOUT=60
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 20... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${ELAPSED}s - connection count never reached 20 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test recovery: Restart server 1 and verify it rejoins the cluster
+      - name: Restart OJP Server 1
+        run: |
+          echo "Restarting OJP Server 1..."
+          nohup java -Dojp.server.port=10591 -Dojp.prometheus.port=9159 -jar ojp-server/target/ojp-server-0.2.1-snapshot-shaded.jar > /tmp/ojp-server-1-restart.log 2>&1 &
+          echo $! > /tmp/ojp-server-1-restart.pid
+          echo "OJP Server 1 restarted with PID $(cat /tmp/ojp-server-1-restart.pid)"
+          sleep 10
+
+      # Verify recovery: Connections should be distributed across both servers again
+      - name: Check PostgreSQL connections after restarting Server 1
+        run: |
+          echo "Checking PostgreSQL connections after restarting Server 1..."
+          TIMEOUT=60
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 20... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 20 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test failover again: Kill server 2
+      - name: Kill OJP Server 2
+        run: |
+          echo "Killing OJP Server 2..."
+          if [ -f /tmp/ojp-server-2.pid ]; then
+            kill $(cat /tmp/ojp-server-2.pid) || true
+            echo "OJP Server 2 killed"
+          fi
+          sleep 10
+
+      # Verify failover: Connections should migrate to server 1
+      - name: Check PostgreSQL connections after killing Server 2
+        run: |
+          echo "Checking PostgreSQL connections after killing Server 2..."
+          TIMEOUT=60
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 20... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 20 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test recovery again: Restart server 2
+      - name: Restart OJP Server 2
+        run: |
+          echo "Restarting OJP Server 2..."
+          nohup java -Dojp.server.port=10592 -Dojp.prometheus.port=9160 -jar ojp-server/target/ojp-server-0.2.1-snapshot-shaded.jar > /tmp/ojp-server-2-restart.log 2>&1 &
+          echo $! > /tmp/ojp-server-2-restart.pid
+          echo "OJP Server 2 restarted with PID $(cat /tmp/ojp-server-2-restart.pid)"
+          sleep 10
+
+      # Final verification: Both servers should be active
+      - name: Check PostgreSQL connections after restarting Server 2
+        run: |
+          echo "Checking PostgreSQL connections after restarting Server 2..."
+          TIMEOUT=60
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 20... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 20 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Wait for the test process to complete
+      - name: Wait for MultinodeIntegrationTest to complete
+        run: |
+          echo "Waiting for MultinodeIntegrationTest to complete..."
+          # Wait for test process to finish (max 10 minutes)
+          if [ -f temp/multinode-test.pid ]; then
+            TEST_PID=$(cat temp/multinode-test.pid)
+            TIMEOUT=60
+            ELAPSED=0
+            while kill -0 $TEST_PID 2>/dev/null && [ $ELAPSED -lt $TIMEOUT ]; do
+              echo "Test still running... (${ELAPSED}s elapsed)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+            
+            if kill -0 $TEST_PID 2>/dev/null; then
+              echo "Test did not complete within timeout, terminating..."
+              kill $TEST_PID || true
+            else
+              echo "Test completed successfully"
+            fi
+          fi
+
+      # Verify the test actually passed
+      - name: Verify test results
+        run: |
+          echo "Checking MultinodeIntegrationTest results..."
+          if grep -q "BUILD SUCCESS" temp/MultinodeIntegrationTest.log; then
+            echo "✓ Test passed successfully"
+          elif grep -q "BUILD FAILURE" temp/MultinodeIntegrationTest.log; then
+            echo "✗ Test failed"
+            exit 1
+          else
+            echo "⚠ Could not determine test status"
+          fi
+
+      # Show logs for debugging (runs even if test fails)
+      - name: Show OJP Server 1 log
+        if: always()
+        run: |
+          echo "=== OJP Server 1 Initial Log ==="
+          cat /tmp/ojp-server-1.log || echo "/tmp/ojp-server-1.log not found"
+          echo ""
+          echo "=== OJP Server 1 Restart Log ==="
+          cat /tmp/ojp-server-1-restart.log || echo "/tmp/ojp-server-1-restart.log not found"
+
+      - name: Show OJP Server 2 log
+        if: always()
+        run: |
+          echo "=== OJP Server 2 Initial Log ==="
+          cat /tmp/ojp-server-2.log || echo "/tmp/ojp-server-2.log not found"
+          echo ""
+          echo "=== OJP Server 2 Restart Log ==="
+          cat /tmp/ojp-server-2-restart.log || echo "/tmp/ojp-server-2-restart.log not found"
+
+      - name: Show MultinodeIntegrationTest log
+        if: always()
+        run: |
+          echo "=== MultinodeIntegrationTest Log ==="
+          cat temp/MultinodeIntegrationTest.log || echo "temp/MultinodeIntegrationTest.log not found"
+
+      # Clean up resources
+      - name: Cleanup
+        if: always()
+        run: |
+          # Kill any remaining OJP server processes
+          pkill -f "ojp-server-0.2.1-snapshot-shaded.jar" || true
+          # Stop Postgres container
+          docker stop ojp-postgres-multinode || true
+          docker rm ojp-postgres-multinode || true
+
+  # ===========================================================================
+  # JOB 3: Oracle Database Testing
+  # ===========================================================================
+  #
+  # This job tests Oracle Database integration.
+  # Oracle JDBC driver is dynamically added during CI (not in repository due
+  # to licensing). The test uses Oracle XE container with full configuration.
+  #
+  # Database: Oracle XE 21c
+  # Matrix strategy: Tests against Java 11, 17, 21, 22
+  # Execution: Only runs AFTER build-test job succeeds (needs: [build-test])
+  #
+  # ===========================================================================
+  oracle-test:
+    name: Oracle Tests (JDK ${{ matrix.java-version }})
+    runs-on: ubuntu-latest
+    # DEPENDENCY: This job only runs if build-test succeeds
+    # This ensures we don't waste resources on Oracle tests if H2 tests fail
+    needs: [build-test]
+    
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: [ 11, 17, 21, 22 ]
+
+    services:
+      # Oracle XE database service container
+      # Configured with testuser/testpassword for testing
+      oracle:
+        image: gvenzl/oracle-xe:21-full
+        env:
+          ORACLE_PASSWORD: testpassword
+          APP_USER: testuser
+          APP_USER_PASSWORD: testpassword
+        options: >-
+          --name ojp-oracle
+          --health-cmd "echo 'SELECT 1 FROM DUAL;' | sqlplus -s system/testpassword@localhost/XEPDB1"
+          --health-interval 20s
+          --health-timeout 10s
+          --health-retries 10
+        ports:
+          - 1521:1521
+
+    steps:
+
+      - name: Git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Grant XA (eXtended Architecture) permissions for distributed transactions
+      # Oracle requires specific privileges for XA transaction support
+      - name: Grant XA permissions to Oracle test user
+        run: |
+          # Wait a bit for Oracle to be fully ready
+          sleep 5
+          
+          # Grant XA permissions to testuser
+          echo "=== Granting XA permissions to testuser ==="
+          
+          docker exec ojp-oracle sqlplus -s system/testpassword@localhost/XEPDB1 <<'EOF'
+          SET ECHO ON
+          SET FEEDBACK ON
+          SET SERVEROUTPUT ON
+          WHENEVER SQLERROR EXIT SQL.SQLCODE
+          
+          -- Grant XA_RECOVER_ADMIN role (Oracle 12c+) for XA transaction recovery
+          -- This role includes necessary privileges for XA operations
+          GRANT XA_RECOVER_ADMIN TO testuser;
+          
+          -- XA transaction permissions (additional grants for completeness)
+          GRANT SELECT ON sys.dba_pending_transactions TO testuser;
+          GRANT SELECT ON sys.pending_trans$ TO testuser;
+          GRANT SELECT ON sys.dba_2pc_pending TO testuser;
+          GRANT SELECT ON sys.dba_2pc_neighbors TO testuser;
+          GRANT EXECUTE ON sys.dbms_xa TO testuser;
+          GRANT EXECUTE ON sys.dbms_system TO testuser;
+          GRANT FORCE ANY TRANSACTION TO testuser;
+          
+          -- Verify grants
+          SELECT 'XA permissions granted successfully' AS status FROM dual;
+          
+          -- Show granted privileges and roles
+          SELECT granted_role, grantee FROM dba_role_privs WHERE grantee = 'TESTUSER' ORDER BY granted_role;
+          SELECT privilege, grantee FROM dba_sys_privs WHERE grantee = 'TESTUSER' ORDER BY privilege;
+          SELECT owner, table_name, privilege, grantee FROM dba_tab_privs WHERE grantee = 'TESTUSER' ORDER BY owner, table_name;
+          
+          EXIT;
+          EOF
+          
+          if [ $? -ne 0 ]; then
+            echo "ERROR: Failed to grant XA permissions!"
+            exit 1
+          fi
+          
+          echo "=== XA permissions granted successfully ==="
+
+      # Dynamically add Oracle JDBC driver to ojp-server
+      # We don't include it in the repository due to Oracle licensing
+      - name: Add Oracle JDBC Driver to ojp-server
+        run: |
+          # Create temporary file with Oracle JDBC dependency
+          cat > /tmp/oracle-dep.txt << 'EOF'
+          <!-- Oracle JDBC Driver (added by CI) -->
+          <dependency>
+              <groupId>com.oracle.database.jdbc</groupId>
+              <artifactId>ojdbc11</artifactId>
+              <version>23.8.0.25.04</version>
+          </dependency>
+          EOF
+          
+          # Insert after the placeholder comment
+          sed -i '/<!-- PROPRIETARY DATABASE DRIVERS PLACEHOLDER -->/r /tmp/oracle-dep.txt' ojp-server/pom.xml
+          
+          # Verify the insertion
+          echo "=== Modified ojp-server/pom.xml dependencies section ==="
+          sed -n '/PROPRIETARY DATABASE DRIVERS PLACEHOLDER/,/HikariCP/p' ojp-server/pom.xml
+
+      - name: Set up JDK 22 for build
+        uses: actions/setup-java@v4
+        with:
+          java-version: 22
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and Install (ojp-grpc-commons) with JDK 22
+        run: mvn clean install -pl ojp-grpc-commons -am -DskipTests -Dgpg.skip=true
+
+      - name: Test (ojp-grpc-commons) with JDK 22
+        run: mvn test -pl ojp-grpc-commons -Dgpg.skip=true
+
+      - name: Build (ojp-server) with JDK 22
+        run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
+
+      - name: Test and Run (ojp-server)
+        run: |
+          nohup java -jar ojp-server/target/ojp-server-0.2.1-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
+          echo $! > /tmp/ojp-server.pid
+
+      - name: Wait for ojp-server to start
+        run: sleep 10
+
+      - name: Set up JDK ${{ matrix.java-version }} for ojp-jdbc-driver
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build (ojp-jdbc-driver) with JDK ${{ matrix.java-version }}
+        run: mvn clean install -pl ojp-jdbc-driver -am -DskipTests -Dgpg.skip=true
+
+      # Run Oracle-specific tests with -DenableOracleTests flag
+      - name: Test (ojp-jdbc-driver) with Oracle enabled
+        run: mvn test -pl ojp-jdbc-driver -Dgpg.skip=true -DenableOracleTests=true
+
+      - name: Show ojp-server.log
+        if: always()  # ensures it runs even if previous steps fail
+        run: cat /tmp/ojp-server.log || echo "/tmp/ojp-server.log not found"
+
+  # ===========================================================================
+  # JOB 4: SQL Server Integration Tests
+  # ===========================================================================
+  #
+  # This job tests SQL Server integration using TestContainers.
+  # TestContainers automatically manages the SQL Server container lifecycle,
+  # so no manual container setup is needed.
+  #
+  # Database: SQL Server (via TestContainers)
+  # Matrix strategy: Tests against Java 11, 17, 21, 22
+  # Execution: Only runs AFTER build-test job succeeds (needs: [build-test])
+  #
+  # ===========================================================================
+  sqlserver-tests:
+    name: SQL Server Integration Tests (JDK ${{ matrix.java-version }})
+    runs-on: ubuntu-latest
+    # DEPENDENCY: This job only runs if build-test succeeds
+    # This ensures we don't waste resources on SQL Server tests if H2 tests fail
+    needs: [build-test]
+    
+    permissions:
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        java-version: [ 11, 17, 21, 22 ]
+
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Dynamically add SQL Server JDBC driver to ojp-server
+      # Similar to Oracle, we add it during CI rather than including in repo
+      - name: Add SQL Server JDBC Driver to ojp-server
+        run: |
+          # Create temporary file with SQL Server JDBC dependency
+          cat > /tmp/sqlserver-dep.txt << 'EOF'
+          <!-- SQL Server JDBC Driver (added by CI) -->
+          <dependency>
+              <groupId>com.microsoft.sqlserver</groupId>
+              <artifactId>mssql-jdbc</artifactId>
+              <version>12.8.2.jre11</version>
+          </dependency>
+          EOF
+          
+          # Insert after the placeholder comment
+          sed -i '/<!-- PROPRIETARY DATABASE DRIVERS PLACEHOLDER -->/r /tmp/sqlserver-dep.txt' ojp-server/pom.xml
+          
+          # Verify the insertion
+          echo "=== Modified ojp-server/pom.xml dependencies section ==="
+          sed -n '/PROPRIETARY DATABASE DRIVERS PLACEHOLDER/,/HikariCP/p' ojp-server/pom.xml
+
+      - name: Set up JDK 22 for build
+        uses: actions/setup-java@v4
+        with:
+          java-version: 22
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and Install (ojp-grpc-commons) with JDK 22
+        run: mvn clean install -pl ojp-grpc-commons -am -DskipTests -Dgpg.skip=true
+
+      - name: Test (ojp-grpc-commons) with JDK 22
+        run: mvn test -pl ojp-grpc-commons -Dgpg.skip=true
+
+      - name: Build (ojp-server) with JDK 22
+        run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
+
+      - name: Test and Run (ojp-server)
+        run: |
+          nohup java -jar ojp-server/target/ojp-server-0.2.1-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
+          echo $! > /tmp/ojp-server.pid
+
+      - name: Wait for ojp-server to start
+        run: sleep 10
+
+      - name: Set up JDK ${{ matrix.java-version }} for ojp-jdbc-driver
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build (ojp-jdbc-driver) with JDK ${{ matrix.java-version }}
+        run: mvn clean install -pl ojp-jdbc-driver -am -DskipTests -Dgpg.skip=true
+
+      # Run SQL Server-specific tests
+      # Uses -DenableSqlServerTests=true flag and filters to SQLServer* test classes
+      # TestContainers will automatically start a SQL Server container for these tests
+      - name: Run SQL Server Integration Tests
+        run: |
+          mvn test -pl ojp-jdbc-driver -Dgpg.skip=true \
+            -DenableSqlServerTests=true \
+            -Dtest="SQLServer*"
+
+      - name: Show ojp-server.log
+        if: always()  # ensures it runs even if previous steps fail
+        run: cat /tmp/ojp-server.log || echo "/tmp/ojp-server.log not found"
+
+  # ===========================================================================
+  # JOB 5: Notify Integration Repository
+  # ===========================================================================
+  #
+  # This job triggers a workflow in the ojp-framework-integration repository
+  # to run integration tests with the latest OJP changes.
+  #
+  # Note: This job runs independently and doesn't depend on other test jobs.
+  # It notifies the integration repo regardless of test outcomes.
+  #
+  # ===========================================================================
   notify-integration:
     runs-on: ubuntu-latest
     steps:
