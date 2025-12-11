@@ -72,6 +72,9 @@ public class ClusterHealthTracker {
      * Returns true if this is a new connHash or if the health status has changed.
      * Updates the last known health if a change is detected.
      * 
+     * Thread-safe: Uses ConcurrentHashMap.compute() for atomic check-and-update
+     * to prevent race conditions where multiple threads detect the same health change.
+     * 
      * @param connHash Connection hash
      * @param currentClusterHealth Current cluster health string
      * @return true if cluster health has changed, false otherwise
@@ -82,28 +85,36 @@ public class ClusterHealthTracker {
         }
         
         // Normalize empty/null cluster health to empty string for comparison
-        String normalizedCurrent = currentClusterHealth == null ? "" : currentClusterHealth;
+        final String normalizedCurrent = currentClusterHealth == null ? "" : currentClusterHealth;
         
-        String lastHealth = lastKnownHealth.get(connHash);
+        // Use a holder to return the result from the compute function
+        final boolean[] hasChanged = new boolean[1];
         
-        // If this is the first time we see this connHash, store the health and don't trigger rebalance
-        if (lastHealth == null) {
-            lastKnownHealth.put(connHash, normalizedCurrent);
-            log.debug("First cluster health report for connHash {}: {}", connHash, normalizedCurrent);
-            return false;
-        }
+        // Atomic check-and-update using compute()
+        lastKnownHealth.compute(connHash, (key, lastHealth) -> {
+            if (lastHealth == null) {
+                // First time seeing this connHash, store the health and ALWAYS trigger rebalancing
+                // This ensures pools are properly configured even when servers restart (new tracker state)
+                log.info("First cluster health report for connHash {}: {} - triggering pool size verification", 
+                         connHash, normalizedCurrent);
+                hasChanged[0] = true;
+                return normalizedCurrent;
+            }
+            
+            if (!lastHealth.equals(normalizedCurrent)) {
+                // Health has changed
+                log.info("Cluster health changed for connHash {}: {} -> {}", 
+                        connHash, lastHealth, normalizedCurrent);
+                hasChanged[0] = true;
+                return normalizedCurrent;
+            }
+            
+            // No change
+            hasChanged[0] = false;
+            return lastHealth;
+        });
         
-        // Check if health has changed
-        boolean hasChanged = !lastHealth.equals(normalizedCurrent);
-        
-        if (hasChanged) {
-            log.info("Cluster health changed for connHash {}: {} -> {}", 
-                    connHash, lastHealth, normalizedCurrent);
-            // Update last known health
-            lastKnownHealth.put(connHash, normalizedCurrent);
-        }
-        
-        return hasChanged;
+        return hasChanged[0];
     }
     
     /**
