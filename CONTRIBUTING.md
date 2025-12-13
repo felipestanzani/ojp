@@ -410,7 +410,7 @@ We're here to help! Don't hesitate to ask questions.
 
 ## License
 
-By contributing to OJP, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).
+By contributing to OJP, you agree that your contributions will be licensed under the [Apache License 2.0](https://github.com/Open-J-Proxy/ojp/blob/main/LICENSE).
 
 ---
 
