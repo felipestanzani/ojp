@@ -54,7 +54,7 @@ After successful build, the runnable JAR will be located at:
 ojp-server/target/ojp-server-<version>-shaded.jar
 ```
 
-For example: `ojp-server/target/ojp-server-0.2.0-beta-shaded.jar`
+For example: `ojp-server/target/ojp-server-0.3.0-beta-shaded.jar`
 
 The runnable JAR size is approximately **27MB** and contains all required dependencies.
 
@@ -65,7 +65,7 @@ The runnable JAR size is approximately **27MB** and contains all required depend
 Run the OJP Server with default configuration:
 
 ```bash
-java -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
+java -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar
 ```
 
 ### Expected Output
@@ -89,7 +89,7 @@ You can customize the server configuration using system properties:
 java -Dojp.server.port=8080 \
      -Dojp.prometheus.port=9091 \
      -Dorg.slf4j.simpleLogger.defaultLogLevel=debug \
-     -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
+     -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar
 ```
 
 ### Running as Background Process
@@ -97,7 +97,7 @@ java -Dojp.server.port=8080 \
 To run the server in the background:
 
 ```bash
-nohup java -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar > ojp-server.log 2>&1 &
+nohup java -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar > ojp-server.log 2>&1 &
 ```
 
 To stop the background process:
@@ -131,7 +131,7 @@ java -Dojp.server.port=8080 \
      -Dojp.prometheus.port=9091 \
      -Dojp.thread.pool.size=100 \
      -Dojp.max.request.size=8388608 \
-     -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
+     -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar
 ```
 
 ## Verification
@@ -207,7 +207,7 @@ mvn clean install -DskipTests
 
 **Solution**: Increase JVM heap size:
 ```bash
-java -Xmx2g -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
+java -Xmx2g -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar
 ```
 
 **Problem**: Missing database drivers
@@ -215,7 +215,7 @@ java -Xmx2g -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
 **Solution**: The runnable JAR includes drivers for H2, PostgreSQL, MySQL, and MariaDB. For Oracle, DB2, SQL Server or other proprietary database, you need to add the respective JDBC drivers to the classpath:
 
 ```bash
-java -cp "oracle-driver.jar:ojp-server-0.2.0-beta-shaded.jar" \
+java -cp "oracle-driver.jar:ojp-server-0.3.0-beta-shaded.jar" \
      org.openjproxy.grpc.server.GrpcServer
 ```
 
@@ -228,7 +228,7 @@ java -Xmx4g \
      -XX:+UseG1GC \
      -XX:MaxGCPauseMillis=100 \
      -Dojp.thread.pool.size=500 \
-     -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
+     -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar
 ```
 
 ## Logging Configuration
@@ -238,11 +238,11 @@ The server uses SLF4J Simple Logger. Configure logging levels:
 ```bash
 # Set log level to DEBUG
 java -Dorg.slf4j.simpleLogger.defaultLogLevel=debug \
-     -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
+     -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar
 
 # Disable most logging (ERROR only)
 java -Dorg.slf4j.simpleLogger.defaultLogLevel=error \
-     -jar ojp-server/target/ojp-server-0.2.0-beta-shaded.jar
+     -jar ojp-server/target/ojp-server-0.3.0-beta-shaded.jar
 ```
 
 ## Next Steps

@@ -11,7 +11,7 @@ Latest version:
          <dependency>
              <groupId>org.openjproxy</groupId>
              <artifactId>ojp-jdbc-driver</artifactId>
-             <version>0.2.0-beta</version>
+             <version>0.3.0-beta</version>
          </dependency>
 
 

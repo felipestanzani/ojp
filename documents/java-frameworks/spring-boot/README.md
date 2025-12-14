@@ -7,7 +7,7 @@ To integrate OJP into your Spring Boot project follow the steps:
 <dependency>
     <groupId>org.openjproxy</groupId>
     <artifactId>ojp-jdbc-driver</artifactId>
-    <version>0.2.0-beta</version>
+    <version>0.3.0-beta</version>
 </dependency>
 ```
 
@@ -55,7 +55,7 @@ SLF4J(W): Found provider [org.slf4j.simple.SimpleServiceProvider@75412c2f]
 SLF4J(W): Found provider [ch.qos.logback.classic.spi.LogbackServiceProvider@282ba1e]
 SLF4J(W): See https://www.slf4j.org/codes.html#multiple_bindings for an explanation.
 SLF4J(I): Actual provider is of type [org.slf4j.simple.SimpleServiceProvider@75412c2f]
-Exception in thread "main" java.lang.IllegalStateException: LoggerFactory is not a Logback LoggerContext but Logback is on the classpath. Either remove Logback or the competing implementation (class org.slf4j.simple.SimpleLoggerFactory loaded from file:/[current.user]/caches/modules-2/files-2.1/org.openjproxy/ojp-jdbc-driver/0.2.0-beta/995b086ffda9e29cc2a5694f3c5c0ddebf30adb9/ojp-jdbc-driver-0.2.0-beta.jar). If you are using WebLogic you will need to add 'org.slf4j' to prefer-application-packages in WEB-INF/weblogic.xml
+Exception in thread "main" java.lang.IllegalStateException: LoggerFactory is not a Logback LoggerContext but Logback is on the classpath. Either remove Logback or the competing implementation (class org.slf4j.simple.SimpleLoggerFactory loaded from file:/[current.user]/caches/modules-2/files-2.1/org.openjproxy/ojp-jdbc-driver/0.3.0-beta/995b086ffda9e29cc2a5694f3c5c0ddebf30adb9/ojp-jdbc-driver-0.3.0-beta.jar). If you are using WebLogic you will need to add 'org.slf4j' to prefer-application-packages in WEB-INF/weblogic.xml
 	at org.springframework.util.Assert.state(Assert.java:101)
 	at org.springframework.boot.logging.logback.LogbackLoggingSystem.getLoggerContext(LogbackLoggingSystem.java:410)
 	at org.springframework.boot.logging.logback.LogbackLoggingSystem.beforeInitialize(LogbackLoggingSystem.java:129)
