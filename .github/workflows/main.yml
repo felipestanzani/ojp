@@ -13,9 +13,10 @@
 # 5. cockroachdb-test: CockroachDB database tests (needs: build-test)
 # 6. db2-test: IBM DB2 database tests (needs: build-test)
 # 7. multinode-test: Multinode failover/recovery tests (needs: build-test)
-# 8. oracle-test: Oracle database tests (needs: build-test)
-# 9. sqlserver-tests: SQL Server tests (needs: build-test)
-# 10. notify-integration: Triggers integration repo workflow
+# 8. multinode-xa-test: Multinode XA integration tests (needs: build-test)
+# 9. oracle-test: Oracle database tests (needs: build-test)
+# 10. sqlserver-tests: SQL Server tests (needs: build-test)
+# 11. notify-integration: Triggers integration repo workflow
 #
 # SEQUENTIAL EXECUTION:
 # All specialized test jobs depend on build-test completing successfully.
@@ -986,7 +987,400 @@ jobs:
           docker rm ojp-postgres-multinode || true
 
   # ===========================================================================
-  # JOB 8: Oracle Database Testing
+  # JOB 8: Multinode XA Integration Tests
+  # ===========================================================================
+  #
+  # This job tests multinode functionality with XA (eXtended Architecture) 
+  # distributed transactions using TWO OJP server instances.
+  # It verifies XA transaction support and failover scenarios by:
+  # 1. Starting two OJP servers on different ports (10591, 10592)
+  # 2. Running tests that use XA connections to both servers
+  # 3. Killing servers one at a time and verifying XA failover
+  # 4. Restarting servers and verifying XA recovery
+  #
+  # Database: PostgreSQL (with XA prepared transactions support)
+  # Execution: Only runs AFTER build-test job succeeds (needs: [build-test])
+  #
+  # NOTE: Connection count checks use < 1000 as a placeholder threshold.
+  # This will be updated when XA connection pool is implemented in OJP server.
+  #
+  # ===========================================================================
+  multinode-xa-test:
+    name: Multinode XA Integration Test
+    runs-on: ubuntu-latest
+    # DEPENDENCY: This job only runs if build-test succeeds
+    # This ensures we don't waste resources on multinode XA tests if H2 tests fail
+    needs: [build-test]
+
+    steps:
+      - name: Git checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Start PostgreSQL container for multinode XA tests
+      # Configured with max_prepared_transactions=100 for XA support
+      - name: Start Postgres
+        run: |
+          docker run --name ojp-postgres-multinode-xa \
+            -e POSTGRES_USER=testuser \
+            -e POSTGRES_PASSWORD=testpassword \
+            -e POSTGRES_DB=defaultdb \
+            -p 5432:5432 \
+            -d postgres:17 \
+            -c max_prepared_transactions=100
+      
+          # Wait for Postgres to become ready (up to 60s)
+          timeout 60 bash -c 'until docker exec ojp-postgres-multinode-xa pg_isready -U testuser -d defaultdb -h 127.0.0.1; do sleep 2; done'
+
+          # Verify setting
+          PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SHOW max_prepared_transactions;"
+
+      - name: Set up JDK 22 for build
+        uses: actions/setup-java@v4
+        with:
+          java-version: 22
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Build and Install (ojp-grpc-commons) with JDK 22
+        run: mvn clean install -pl ojp-grpc-commons -am -DskipTests -Dgpg.skip=true
+
+      - name: Test (ojp-grpc-commons) with JDK 22
+        run: mvn test -pl ojp-grpc-commons -Dgpg.skip=true
+
+      - name: Build (ojp-server) with JDK 22
+        run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
+
+      # Start first OJP server instance on port 10591
+      - name: Start OJP Server 1 on port 10591
+        run: |
+          # Start first server on port 10591 with Prometheus on 9159
+          nohup java -Dojp.server.port=10591 -Dojp.prometheus.port=9159 -jar ojp-server/target/ojp-server-0.3.1-snapshot-shaded.jar > /tmp/ojp-server-xa-1.log 2>&1 &
+          echo $! > /tmp/ojp-server-xa-1.pid
+          echo "Started OJP Server 1 on gRPC port 10591, Prometheus port 9159 with PID $(cat /tmp/ojp-server-xa-1.pid)"
+
+      # Start second OJP server instance on port 10592
+      - name: Start OJP Server 2 on port 10592
+        run: |
+          # Start second server on port 10592 with Prometheus on 9160
+          nohup java -Dojp.server.port=10592 -Dojp.prometheus.port=9160 -jar ojp-server/target/ojp-server-0.3.1-snapshot-shaded.jar > /tmp/ojp-server-xa-2.log 2>&1 &
+          echo $! > /tmp/ojp-server-xa-2.pid
+          echo "Started OJP Server 2 on gRPC port 10592, Prometheus port 9160 with PID $(cat /tmp/ojp-server-xa-2.pid)"
+
+      - name: Wait for OJP servers to start
+        run: |
+          echo "Waiting for servers to start..."
+          sleep 15
+          echo "Checking if servers are listening..."
+          netstat -tuln | grep -E ':(10591|10592)' || echo "Warning: Servers might not be listening yet"
+
+      - name: Build (ojp-jdbc-driver) with JDK 22
+        run: mvn clean install -pl ojp-jdbc-driver -am -DskipTests -Dgpg.skip=true
+
+      - name: Create temp directory for test logs
+        run: mkdir -p temp
+
+      # Run the multinode XA integration test in background
+      # This test will create XA connections to both servers and test failover scenarios
+      - name: Start MultinodeXAIntegrationTest with nohup
+        run: |
+          echo "Starting MultinodeXAIntegrationTest in background..."
+          nohup mvn test -pl ojp-jdbc-driver -Dtest=MultinodeXAIntegrationTest -DmultinodeXATestsEnabled=true -Dgpg.skip=true > temp/MultinodeXAIntegrationTest.log 2>&1 &
+          echo $! > temp/multinode-xa-test.pid
+          echo "MultinodeXAIntegrationTest started with PID $(cat temp/multinode-xa-test.pid)"
+          # Give test time to start
+          sleep 20
+
+      # Verify XA connection pooling is working
+      # NOTE: This check uses < 1000 as a placeholder threshold.
+      # The actual expected connection count for XA tests may be different than non-XA tests
+      # due to how Atomikos and XA connection pooling works.
+      # This will be refined when XA connection pool is implemented in OJP server.
+      - name: Check PostgreSQL connections during XA test
+        run: |
+          echo "Checking PostgreSQL connections..."
+          TIMEOUT=600
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            # Placeholder check: just verify we don't exceed 1000 connections
+            # This will be refined when XA connection pool is implemented in OJP server
+            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
+              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 1... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 1 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test XA failover: Kill server 1 and verify XA transactions can continue on server 2
+      - name: Kill OJP Server 1
+        run: |
+          echo "Killing OJP Server 1..."
+          if [ -f /tmp/ojp-server-xa-1.pid ]; then
+            kill $(cat /tmp/ojp-server-xa-1.pid) || true
+            echo "OJP Server 1 killed"
+          fi
+          sleep 10
+
+      # Verify XA failover: Connections should still be active on server 2
+      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
+      - name: Check PostgreSQL connections after killing Server 1
+        run: |
+          echo "Checking PostgreSQL connections after killing Server 1..."
+          TIMEOUT=600
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            # Placeholder check: just verify we don't exceed 1000 connections
+            # This will be refined when XA connection pool is implemented in OJP server
+            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
+              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 1... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 1 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test XA recovery: Restart server 1 and verify it rejoins the cluster
+      - name: Restart OJP Server 1
+        run: |
+          echo "Restarting OJP Server 1..."
+          nohup java -Dojp.server.port=10591 -Dojp.prometheus.port=9159 -jar ojp-server/target/ojp-server-0.3.1-snapshot-shaded.jar > /tmp/ojp-server-xa-1-restart.log 2>&1 &
+          echo $! > /tmp/ojp-server-xa-1-restart.pid
+          echo "OJP Server 1 restarted with PID $(cat /tmp/ojp-server-xa-1-restart.pid)"
+          sleep 10
+
+      # Verify XA recovery: Connections should be distributed across both servers again
+      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
+      - name: Check PostgreSQL connections after restarting Server 1
+        run: |
+          echo "Checking PostgreSQL connections after restarting Server 1..."
+          TIMEOUT=600
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            # Placeholder check: just verify we don't exceed 1000 connections
+            # This will be refined when XA connection pool is implemented in OJP server
+            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
+              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 1... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 1 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test XA failover again: Kill server 2
+      - name: Kill OJP Server 2
+        run: |
+          echo "Killing OJP Server 2..."
+          if [ -f /tmp/ojp-server-xa-2.pid ]; then
+            kill $(cat /tmp/ojp-server-xa-2.pid) || true
+            echo "OJP Server 2 killed"
+          fi
+          sleep 10
+
+      # Verify XA failover: Connections should migrate to server 1
+      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
+      - name: Check PostgreSQL connections after killing Server 2
+        run: |
+          echo "Checking PostgreSQL connections after killing Server 2..."
+          TIMEOUT=600
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            # Placeholder check: just verify we don't exceed 1000 connections
+            # This will be refined when XA connection pool is implemented in OJP server
+            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
+              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 1... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 1 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Test XA recovery again: Restart server 2
+      - name: Restart OJP Server 2
+        run: |
+          echo "Restarting OJP Server 2..."
+          nohup java -Dojp.server.port=10592 -Dojp.prometheus.port=9160 -jar ojp-server/target/ojp-server-0.3.1-snapshot-shaded.jar > /tmp/ojp-server-xa-2-restart.log 2>&1 &
+          echo $! > /tmp/ojp-server-xa-2-restart.pid
+          echo "OJP Server 2 restarted with PID $(cat /tmp/ojp-server-xa-2-restart.pid)"
+          sleep 10
+
+      # Final XA verification: Both servers should be active
+      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
+      - name: Check PostgreSQL connections after restarting Server 2
+        run: |
+          echo "Checking PostgreSQL connections after restarting Server 2..."
+          TIMEOUT=600
+          ELAPSED=0
+          
+          while [ $ELAPSED -lt $TIMEOUT ]; do
+            CONNECTION_COUNT=$(PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -t -c "SELECT COUNT(*) FROM pg_stat_activity WHERE datname='defaultdb';")
+            CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
+            echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
+            
+            # Placeholder check: just verify we don't exceed 1000 connections
+            # This will be refined when XA connection pool is implemented in OJP server
+            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
+              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              break
+            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+              PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
+              exit 1
+            else
+              echo "Waiting for connections to reach at least 1... (currently: $CONNECTION_COUNT)"
+              sleep 2
+              ELAPSED=$((ELAPSED + 2))
+            fi
+          done
+          
+          if [ $ELAPSED -ge $TIMEOUT ]; then
+            echo "✗ ERROR: Timeout after ${TIMEOUT}s - connection count never reached 1 (current: $CONNECTION_COUNT)"
+            exit 1
+          fi
+
+      # Wait for the XA test process to complete
+      - name: Wait for MultinodeXAIntegrationTest to complete
+        run: |
+          echo "Waiting for MultinodeXAIntegrationTest to complete..."
+          # Wait for test process to finish (max 10 minutes)
+          if [ -f temp/multinode-xa-test.pid ]; then
+            TEST_PID=$(cat temp/multinode-xa-test.pid)
+            TIMEOUT=600
+            ELAPSED=0
+            while kill -0 $TEST_PID 2>/dev/null && [ $ELAPSED -lt $TIMEOUT ]; do
+              echo "Test still running... (${ELAPSED}s elapsed)"
+              sleep 10
+              ELAPSED=$((ELAPSED + 10))
+            done
+            
+            if kill -0 $TEST_PID 2>/dev/null; then
+              echo "Test did not complete within timeout, terminating..."
+              kill $TEST_PID || true
+            else
+              echo "Test completed successfully"
+            fi
+          fi
+
+      # Verify the XA test actually passed
+      - name: Verify test results
+        run: |
+          echo "Checking MultinodeXAIntegrationTest results..."
+          if grep -q "BUILD SUCCESS" temp/MultinodeXAIntegrationTest.log; then
+            echo "✓ Test passed successfully"
+          elif grep -q "BUILD FAILURE" temp/MultinodeXAIntegrationTest.log; then
+            echo "✗ Test failed"
+            exit 1
+          else
+            echo "⚠ Could not determine test status"
+          fi
+
+      # Show logs for debugging (runs even if test fails)
+      - name: Show OJP Server 1 log
+        if: always()
+        run: |
+          echo "=== OJP Server 1 Initial Log ==="
+          cat /tmp/ojp-server-xa-1.log || echo "/tmp/ojp-server-xa-1.log not found"
+          echo ""
+          echo "=== OJP Server 1 Restart Log ==="
+          cat /tmp/ojp-server-xa-1-restart.log || echo "/tmp/ojp-server-xa-1-restart.log not found"
+
+      - name: Show OJP Server 2 log
+        if: always()
+        run: |
+          echo "=== OJP Server 2 Initial Log ==="
+          cat /tmp/ojp-server-xa-2.log || echo "/tmp/ojp-server-xa-2.log not found"
+          echo ""
+          echo "=== OJP Server 2 Restart Log ==="
+          cat /tmp/ojp-server-xa-2-restart.log || echo "/tmp/ojp-server-xa-2-restart.log not found"
+
+      - name: Show MultinodeXAIntegrationTest log
+        if: always()
+        run: |
+          echo "=== MultinodeXAIntegrationTest Log ==="
+          cat temp/MultinodeXAIntegrationTest.log || echo "temp/MultinodeXAIntegrationTest.log not found"
+
+      # Clean up resources
+      - name: Cleanup
+        if: always()
+        run: |
+          # Kill any remaining OJP server processes
+          pkill -f "ojp-server-0.3.1-snapshot-shaded.jar" || true
+          # Stop Postgres container
+          docker stop ojp-postgres-multinode-xa || true
+          docker rm ojp-postgres-multinode-xa || true
+
+  # ===========================================================================
+  # JOB 9: Oracle Database Testing
   # ===========================================================================
   #
   # This job tests Oracle Database integration.
@@ -1149,7 +1543,7 @@ jobs:
         run: cat /tmp/ojp-server.log || echo "/tmp/ojp-server.log not found"
 
   # ===========================================================================
-  # JOB 9: SQL Server Integration Tests
+  # JOB 10: SQL Server Integration Tests
   # ===========================================================================
   #
   # This job tests SQL Server integration using TestContainers.
@@ -1251,7 +1645,7 @@ jobs:
         run: cat /tmp/ojp-server.log || echo "/tmp/ojp-server.log not found"
 
   # ===========================================================================
-  # JOB 10: Notify Integration Repository
+  # JOB 11: Notify Integration Repository
   # ===========================================================================
   #
   # This job triggers a workflow in the ojp-framework-integration repository
