@@ -1,6 +1,7 @@
 package openjproxy.jdbc;
 
 import lombok.extern.slf4j.Slf4j;
+import openjproxy.jdbc.testutil.SQLServerConnectionProvider;
 import openjproxy.jdbc.testutil.TestDBUtils;
 import openjproxy.jdbc.testutil.TestDBUtils.ConnectionResult;
 import org.junit.Assert;
@@ -78,7 +79,7 @@ public class BasicCrudIntegrationTest {
             Assumptions.assumeFalse(true, "Skipping DB2 tests - not enabled");
         }
 
-        // Skip CockroachDB tests if not enabled  
+        // Skip CockroachDB tests if not enabled
         if (url.toLowerCase().contains("26257") && !isCockroachDBTestEnabled) {
             Assumptions.assumeFalse(true, "Skipping CockroachDB tests");
         }
@@ -93,7 +94,8 @@ public class BasicCrudIntegrationTest {
         } else if (url.toLowerCase().contains("oracle")) {
             tablePrefix = "oracle_";
         } else if (url.toLowerCase().contains("sqlserver")) {
-            tablePrefix = "sqlserver_";
+            url = SQLServerConnectionProvider.getOjpProxyAddress();
+            tablePrefix = "sqlserver_" +  (isXA ? "xa_" : "nonxa_");
         } else if (url.toLowerCase().contains("db2")) {
             tablePrefix = "db2_";
         } else if (url.toLowerCase().contains("26257")) {

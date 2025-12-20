@@ -30,7 +30,7 @@ class ConnectionPoolDynamicResizingTest {
         // Setup: Create a test HikariDataSource with initial multinode configuration
         String connHash = "test-conn-hash";
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:test");
+        config.setJdbcUrl("jdbc:h2:mem:conn_pool_resize_1");
         config.setUsername("sa");
         config.setPassword("");
         config.setMaximumPoolSize(30); // Original: 30 / 3 servers = 10 each
@@ -86,7 +86,7 @@ class ConnectionPoolDynamicResizingTest {
         // Setup
         String connHash = "test-conn-hash-2";
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:test2");
+        config.setJdbcUrl("jdbc:h2:mem:conn_pool_resize_2");
         config.setUsername("sa");
         config.setPassword("");
         config.setMaximumPoolSize(20);
@@ -127,7 +127,7 @@ class ConnectionPoolDynamicResizingTest {
     void testApplyPoolSizeChangesWithNullAllocation() {
         // Setup: DataSource without pool allocation
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:test3");
+        config.setJdbcUrl("jdbc:h2:mem:conn_pool_resize_3");
         config.setUsername("sa");
         config.setPassword("");
         config.setMaximumPoolSize(20);
@@ -148,7 +148,7 @@ class ConnectionPoolDynamicResizingTest {
         // Setup: Create a test HikariDataSource
         String connHash = "test-conn-hash-recovery";
         HikariConfig config = new HikariConfig();
-        config.setJdbcUrl("jdbc:h2:mem:test_recovery");
+        config.setJdbcUrl("jdbc:h2:mem:conn_pool_resize_recovery");
         config.setUsername("sa");
         config.setPassword("");
         config.setMaximumPoolSize(20); // Original: 20 / 2 servers = 10 each

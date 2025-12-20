@@ -1,0 +1,1 @@
+jdbc:ojp[localhost:1059]_sqlserver://localhost:1433;databaseName=defaultdb;encrypt=false;trustServerCertificate=true,testuser,TestPassword123!
