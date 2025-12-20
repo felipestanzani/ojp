@@ -306,9 +306,6 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             }
             return;
         }
-                return;
-            }
-        }
         
         // Handle non-XA connection - use Connection Pool SPI (HikariCP by default)
         DataSource ds = this.datasourceMap.get(connHash);
