@@ -99,8 +99,12 @@ public class XATransactionRegistry {
             // Register the existing session
             ctx.transitionToActive(session);
             
-            // Call XAResource.start on backend
-            session.getXAResource().start(xid.toXid(), flags);
+            // Create Xid object once and store it for reuse
+            javax.transaction.xa.Xid actualXid = xid.toXid();
+            ctx.setActualXid(actualXid);
+            
+            // Call XAResource.start on backend with the stored Xid
+            session.getXAResource().start(actualXid, flags);
             
             log.info("XA transaction registered with existing session: xid={}", xid);
         } catch (XAException e) {
@@ -143,8 +147,12 @@ public class XATransactionRegistry {
                 BackendSession session = poolProvider.borrowSession(poolDataSource);
                 ctx.transitionToActive(session);
                 
-                // Call XAResource.start on backend
-                session.getXAResource().start(xid.toXid(), flags);
+                // Create Xid object once and store it for reuse
+                javax.transaction.xa.Xid actualXid = xid.toXid();
+                ctx.setActualXid(actualXid);
+                
+                // Call XAResource.start on backend with the stored Xid
+                session.getXAResource().start(actualXid, flags);
                 
                 log.info("XA transaction started: xid={}", xid);
             } catch (Exception e) {
@@ -162,8 +170,14 @@ public class XATransactionRegistry {
             try {
                 ctx.transitionToActiveFromEnded(isTmJoin);
                 
-                // Call XAResource.start on backend
-                ctx.getSession().getXAResource().start(xid.toXid(), flags);
+                // Reuse the same Xid object that was used in original start()
+                javax.transaction.xa.Xid actualXid = ctx.getActualXid();
+                if (actualXid == null) {
+                    throw new XAException(XAException.XAER_PROTO);
+                }
+                
+                // Call XAResource.start on backend with the stored Xid
+                ctx.getSession().getXAResource().start(actualXid, flags);
                 
                 log.debug("XA transaction {} resumed: xid={}", isTmJoin ? "joined" : "resumed", xid);
             } catch (IllegalStateException e) {
@@ -203,8 +217,14 @@ public class XATransactionRegistry {
         }
         
         try {
-            // Call XAResource.end on backend first
-            ctx.getSession().getXAResource().end(xid.toXid(), flags);
+            // Reuse the same Xid object that was used in start()
+            javax.transaction.xa.Xid actualXid = ctx.getActualXid();
+            if (actualXid == null) {
+                throw new XAException(XAException.XAER_PROTO);
+            }
+            
+            // Call XAResource.end on backend with the stored Xid
+            ctx.getSession().getXAResource().end(actualXid, flags);
             
             ctx.transitionToEnded(isTmSuspend);
             
@@ -234,8 +254,14 @@ public class XATransactionRegistry {
         }
         
         try {
+            // Reuse the same Xid object that was used in start()
+            javax.transaction.xa.Xid actualXid = ctx.getActualXid();
+            if (actualXid == null) {
+                throw new XAException(XAException.XAER_PROTO);
+            }
+            
             // Call XAResource.prepare on backend
-            int result = ctx.getSession().getXAResource().prepare(xid.toXid());
+            int result = ctx.getSession().getXAResource().prepare(actualXid);
             
             if (result == XAResource.XA_RDONLY) {
                 // Read-only optimization: no prepare needed, transaction can complete immediately
@@ -286,8 +312,14 @@ public class XATransactionRegistry {
         }
         
         try {
+            // Reuse the same Xid object that was used in start()
+            javax.transaction.xa.Xid actualXid = ctx.getActualXid();
+            if (actualXid == null) {
+                throw new XAException(XAException.XAER_PROTO);
+            }
+            
             // Call XAResource.commit on backend
-            ctx.getSession().getXAResource().commit(xid.toXid(), onePhase);
+            ctx.getSession().getXAResource().commit(actualXid, onePhase);
             
             ctx.transitionToCommitted();
             returnSessionToPool(ctx);
@@ -324,8 +356,14 @@ public class XATransactionRegistry {
         }
         
         try {
+            // Reuse the same Xid object that was used in start()
+            javax.transaction.xa.Xid actualXid = ctx.getActualXid();
+            if (actualXid == null) {
+                throw new XAException(XAException.XAER_PROTO);
+            }
+            
             // Call XAResource.rollback on backend
-            ctx.getSession().getXAResource().rollback(xid.toXid());
+            ctx.getSession().getXAResource().rollback(actualXid);
             
             ctx.transitionToRolledBack();
             returnSessionToPool(ctx);

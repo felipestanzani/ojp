@@ -43,6 +43,7 @@ public class TxContext {
     
     private TxState state;
     private BackendSession session;
+    private javax.transaction.xa.Xid actualXid;  // Store the actual Xid object to reuse across XA calls
     private Integer timeoutSeconds;
     private Boolean readOnlyHint;
     private int associationCount;
@@ -88,7 +89,7 @@ public class TxContext {
     }
     
     /**
-     * Gets the bound backend session.
+     * Gets the backend session binding.
      * 
      * @return the BackendSession, or null if not bound
      */
@@ -110,6 +111,35 @@ public class TxContext {
         lock.lock();
         try {
             this.session = session;
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Gets the actual Xid object used for XA calls.
+     * This ensures the same Xid instance is reused across start/end/prepare/commit/rollback.
+     * 
+     * @return the actual Xid, or null if not set
+     */
+    public javax.transaction.xa.Xid getActualXid() {
+        lock.lock();
+        try {
+            return actualXid;
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Sets the actual Xid object to be reused for XA calls.
+     * 
+     * @param actualXid the Xid object to store
+     */
+    public void setActualXid(javax.transaction.xa.Xid actualXid) {
+        lock.lock();
+        try {
+            this.actualXid = actualXid;
         } finally {
             lock.unlock();
         }
