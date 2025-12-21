@@ -326,8 +326,31 @@ public class XATransactionRegistry {
             contexts.remove(xid);
             
             log.info("XA transaction committed: xid={}, onePhase={}", xid, onePhase);
+        } catch (XAException e) {
+            log.error("XA error during commit for xid=" + xid, e);
+            // Best effort: still clean up context and return session
+            try {
+                returnSessionToPool(ctx);
+            } catch (Exception e2) {
+                log.error("Failed to return session to pool after commit error", e2);
+            }
+            contexts.remove(xid);
+            throw e;  // Rethrow original XAException to preserve error code
         } catch (IllegalStateException e) {
+            log.error("Invalid state transition during commit for xid=" + xid, e);
             throw new XAException(XAException.XAER_PROTO);
+        } catch (Exception e) {
+            log.error("Unexpected error during commit for xid=" + xid, e);
+            // Best effort: still clean up context and return session
+            try {
+                returnSessionToPool(ctx);
+            } catch (Exception e2) {
+                log.error("Failed to return session to pool after commit error", e2);
+            }
+            contexts.remove(xid);
+            XAException xae = new XAException(XAException.XAER_RMERR);
+            xae.initCause(e);  // Preserve original exception
+            throw xae;
         }
     }
     
@@ -370,8 +393,8 @@ public class XATransactionRegistry {
             contexts.remove(xid);
             
             log.info("XA transaction rolled back: xid={}", xid);
-        } catch (Exception e) {
-            log.error("Error during rollback for xid=" + xid, e);
+        } catch (XAException e) {
+            log.error("XA error during rollback for xid=" + xid, e);
             // Best effort: still clean up context and return session
             try {
                 returnSessionToPool(ctx);
@@ -379,7 +402,19 @@ public class XATransactionRegistry {
                 log.error("Failed to return session to pool after rollback error", e2);
             }
             contexts.remove(xid);
-            throw new XAException(XAException.XAER_RMERR);
+            throw e;  // Rethrow original XAException to preserve error code
+        } catch (Exception e) {
+            log.error("Unexpected error during rollback for xid=" + xid, e);
+            // Best effort: still clean up context and return session
+            try {
+                returnSessionToPool(ctx);
+            } catch (Exception e2) {
+                log.error("Failed to return session to pool after rollback error", e2);
+            }
+            contexts.remove(xid);
+            XAException xae = new XAException(XAException.XAER_RMERR);
+            xae.initCause(e);  // Preserve original exception
+            throw xae;
         }
     }
     
