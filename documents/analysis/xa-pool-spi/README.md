@@ -178,7 +178,7 @@ For issues, questions, or contributions:
 
 ## Related Documentation
 
-- [XA Transaction Flow](../xa/XA_TRANSACTION_FLOW.md)
-- [Atomikos Integration](../xa/ATOMIKOS_XA_INTEGRATION.md)
-- [Multinode Failover](../xa/XA_MULTINODE_FAILOVER.md)
+- [XA Transaction Flow](../xa-deprecated/XA_TRANSACTION_FLOW.md)
+- [Atomikos Integration](../xa-deprecated/ATOMIKOS_XA_INTEGRATION.md)
+- [Multinode Failover](../xa-deprecated/XA_MULTINODE_FAILOVER.md)
 - [Database Comparison](../analysis/DATABASE_XA_POOL_LIBRARIES_COMPARISON.md)

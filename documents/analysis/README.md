@@ -5,7 +5,7 @@ This directory contains architectural analysis and design documents for OJP feat
 ## Documents
 
 ### XA Pool Implementation Analysis
-**File**: [XA_POOL_IMPLEMENTATION_ANALYSIS.md](XA_POOL_IMPLEMENTATION_ANALYSIS.md)  
+**File**: [XA_POOL_IMPLEMENTATION_ANALYSIS.md](./xa-pool-spi/XA_POOL_IMPLEMENTATION_ANALYSIS.md)  
 **Date**: 2025-12-20  
 **Status**: Draft for Review
 
