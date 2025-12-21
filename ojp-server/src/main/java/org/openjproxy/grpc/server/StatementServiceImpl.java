@@ -391,10 +391,13 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         XATransactionRegistry registry = xaRegistries.get(connHash);
         if (registry == null) {
             try {
+                // Parse URL to remove OJP-specific prefix (same as non-XA path)
+                String parsedUrl = UrlParser.parseUrl(connectionDetails.getUrl());
+                
                 // Build configuration map for XA Pool Provider
                 Map<String, String> xaPoolConfig = new HashMap<>();
-                xaPoolConfig.put("xa.datasource.className", getXADataSourceClassName(connectionDetails.getUrl()));
-                xaPoolConfig.put("xa.url", UrlParser.parseUrl(connectionDetails.getUrl()));
+                xaPoolConfig.put("xa.datasource.className", getXADataSourceClassName(parsedUrl));
+                xaPoolConfig.put("xa.url", parsedUrl);
                 xaPoolConfig.put("xa.username", connectionDetails.getUser());
                 xaPoolConfig.put("xa.password", connectionDetails.getPassword());
                 xaPoolConfig.put("xa.maxPoolSize", String.valueOf(serverConfiguration.getXaMaxPoolSize()));
@@ -442,7 +445,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                     connectionDetails.getClientUUID(), connection, xaConnection);
             
             // Store the BackendSession reference in the session for later lifecycle management
-            Session session = this.sessionManager.getSession(sessionInfo.getSessionUUID());
+            Session session = this.sessionManager.getSession(sessionInfo);
             if (session != null) {
                 session.setBackendSession(backendSession);
             }
