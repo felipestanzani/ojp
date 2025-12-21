@@ -22,6 +22,7 @@ import com.openjproxy.grpc.StatementServiceGrpc;
 import com.openjproxy.grpc.TransactionInfo;
 import com.openjproxy.grpc.TransactionStatus;
 import com.zaxxer.hikari.HikariDataSource;
+import io.grpc.Status;
 import io.grpc.stub.ServerCallStreamObserver;
 import io.grpc.stub.StreamObserver;
 import lombok.Builder;
@@ -407,16 +408,18 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 String parsedUrl = UrlParser.parseUrl(connectionDetails.getUrl());
                 
                 // Build configuration map for XA Pool Provider
+                // Use standard PoolConfig defaults (same as non-XA pools)
                 Map<String, String> xaPoolConfig = new HashMap<>();
                 xaPoolConfig.put("xa.datasource.className", getXADataSourceClassName(parsedUrl));
                 xaPoolConfig.put("xa.url", parsedUrl);
                 xaPoolConfig.put("xa.username", connectionDetails.getUser());
                 xaPoolConfig.put("xa.password", connectionDetails.getPassword());
-                xaPoolConfig.put("xa.maxPoolSize", String.valueOf(serverConfiguration.getXaMaxPoolSize()));
-                xaPoolConfig.put("xa.minIdle", String.valueOf(serverConfiguration.getXaMinIdle()));
-                xaPoolConfig.put("xa.maxWaitMillis", String.valueOf(serverConfiguration.getXaMaxWaitMillis()));
-                xaPoolConfig.put("xa.idleTimeoutMinutes", String.valueOf(serverConfiguration.getXaIdleTimeoutMinutes()));
-                xaPoolConfig.put("xa.maxLifetimeMinutes", String.valueOf(serverConfiguration.getXaMaxLifetimeMinutes()));
+                // Standard defaults: maxPoolSize=10, minIdle=2, connectionTimeout=30s, idleTimeout=10min, maxLifetime=30min
+                xaPoolConfig.put("xa.maxPoolSize", "10");
+                xaPoolConfig.put("xa.minIdle", "2");
+                xaPoolConfig.put("xa.maxWaitMillis", "30000");
+                xaPoolConfig.put("xa.idleTimeoutMinutes", "10");
+                xaPoolConfig.put("xa.maxLifetimeMinutes", "30");
                 
                 // Create pooled XA DataSource via provider
                 Object pooledXADataSource = xaPoolProvider.createXADataSource(xaPoolConfig);
@@ -429,7 +432,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 createSlowQuerySegregationManagerForDatasource(connHash, actualMaxXaTransactions, true, xaStartTimeoutMillis);
                 
                 log.info("Created XA Pool Provider registry for connHash: {} with maxPoolSize: {}", 
-                        connHash, serverConfiguration.getXaMaxPoolSize());
+                        connHash, 10);
                 
             } catch (Exception e) {
                 log.error("Failed to create XA Pool Provider registry for connection hash {}: {}", 
