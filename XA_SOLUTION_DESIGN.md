@@ -2,9 +2,18 @@
 
 ## Problem Summary
 
-After analyzing the code and based on the new requirement to check XA connection hibernation, the root cause is confirmed:
+After analyzing the code and reviewing session lifecycle requirements, the root cause is confirmed:
 
 **Sessions are NOT being hibernated/reset after transaction completion**, causing the XAConnection to remain in ENDED state for subsequent transactions.
+
+### Correct Session Lifecycle Understanding
+
+Per the design and code comments:
+- **Session does NOT go back to pool after commit/rollback** ✓
+- **Session stays bound to OJP Session for multiple sequential transactions** ✓
+- **Session is returned to pool ONLY when client closes connection** ✓ (via `Session.terminate()`)
+
+This is correct behavior! The issue is NOT about pool return timing.
 
 ### Current Behavior
 
@@ -12,30 +21,41 @@ After analyzing the code and based on the new requirement to check XA connection
 2. During `xaStart(xid1, TMNOFLAGS)`: Transaction started on the same logical connection
 3. After `xaCommit(xid1)`: 
    - TxContext removed ✓
-   - Session stays bound to OJP Session ✓
-   - **NO reset() or hibernation called** ✗
+   - Session stays bound to OJP Session ✓ (CORRECT - should not return to pool yet)
+   - **NO hibernation/reset called between transactions** ✗ (PROBLEM!)
    - **XAConnection remains in ENDED state** ✗
-4. During next `xaStart(xid2, ...)`: 
-   - Same XAConnection still in ENDED state
-   - Depending on flags, various errors occur
+4. During next `xaStart(xid2, TMNOFLAGS)`: 
+   - Same XAConnection still in ENDED state from previous transaction
+   - New transaction fails to start due to dirty XA state
 
 ### Why This Fails
 
-PostgreSQL (and other databases) XAConnection has internal state that must be reset between transactions:
+PostgreSQL (and other databases) XAConnection has internal state that must be reset between transactions when the same physical connection/session is reused:
 
 ```
-Transaction 1:
-  start(xid1) → ACTIVE
-  end(xid1) → ENDED  
-  commit(xid1) → Should return to IDLE, but doesn't always
-
-Transaction 2:
-  start(xid2) → ERROR: Connection still in ENDED state!
+Session Lifecycle (Client keeps connection open):
+  
+  Transaction 1:
+    start(xid1) → ACTIVE
+    work...
+    end(xid1) → ENDED  
+    commit(xid1) → Should return to IDLE for connection reuse
+    
+  (Session stays bound, no pool return - CORRECT!)
+  (But XA state not reset - PROBLEM!)
+  
+  Transaction 2:
+    start(xid2) → ERROR: Connection still in ENDED state from xid1!
 ```
+
+When native XA datasources work, it's because:
+- The application gets a fresh logical connection for each transaction
+- Or the XA driver automatically resets state when getting a connection from XAConnection
+- OJP's eager allocation strategy reuses the same logical connection, exposing this issue
 
 ## Root Cause Analysis
 
-### Issue 1: Missing XA Connection Hibernation
+### Issue 1: Missing XA Connection Hibernation Between Transactions
 
 **Location**: `XATransactionRegistry.java` - `xaCommit()` and `xaRollback()` methods
 
@@ -46,7 +66,11 @@ ctx.transitionToCommitted();
 contexts.remove(xid);
 ```
 
-But it **never calls any hibernation/reset logic** on the session!
+The comment is correct - the session should NOT return to pool yet. However, it **never calls any hibernation/reset logic** on the session to prepare it for the next transaction!
+
+**The session must be hibernated/reset BETWEEN transactions, not AFTER pool return.** These are two different concerns:
+- **Hibernation**: Reset XA state between transactions while session stays bound to OJP Session
+- **Pool Return**: Return session to pool when OJP Session terminates (client closes connection)
 
 ### Issue 2: Missing Flag Routing
 
@@ -61,47 +85,60 @@ This should route based on flags to support TMJOIN/TMRESUME.
 
 ## Solution Design
 
-### Solution 1: Implement XA Connection Hibernation (Primary Fix)
+### Solution 1: Sanitize XA Session After Transaction (Primary Fix)
 
-Add a new method to `XABackendSession` interface and implement hibernation logic:
+**Key Insight**: We need to **sanitize the session between transactions** (after commit/rollback) even though the session doesn't return to the pool. This is different from the `reset()` method which is for pool return.
 
-#### 1.1 Add `hibernate()` method to XABackendSession interface
+The sanitization must:
+1. Close the current logical connection (which has ENDED XA state)
+2. Get a fresh logical connection from the XAConnection
+3. This resets the XA state to IDLE for the next transaction
+
+**Why we need a separate method**: The existing `reset()` method is designed for pool return and doesn't reset XA state. We need XA-specific sanitization that happens after each transaction while the session remains bound.
+
+#### 1.1 Add `sanitizeAfterTransaction()` method to XABackendSession interface
 
 ```java
 /**
- * Hibernates the XA session after transaction completion.
+ * Sanitizes the XA session after transaction completion.
  * <p>
- * This method prepares the session for reuse in a new transaction by:
+ * This method prepares the session for the next transaction by refreshing
+ * the logical connection to reset XA state. It is called after commit/rollback
+ * while the session remains bound to the OJP Session (not returned to pool).
+ * </p>
+ * <p>
+ * This is different from {@link #reset()} which is called when returning
+ * the session to the pool. Sanitization happens BETWEEN transactions on the
+ * same OJP Session, while reset happens AFTER the OJP Session terminates.
+ * </p>
+ * <p>
+ * The method must:
  * <ul>
- *   <li>Closing the current logical connection</li>
- *   <li>Obtaining a fresh logical connection from the XAConnection</li>
- *   <li>Resetting the XA state to idle</li>
+ *   <li>Close the current logical connection (which may be in ENDED XA state)</li>
+ *   <li>Obtain a fresh logical connection from the XAConnection</li>
+ *   <li>Reset the XA state to IDLE for the next transaction</li>
  * </ul>
- * <p>
- * This ensures that the XAConnection's internal state is reset and ready
- * for a new transaction, avoiding issues where the connection remains in
- * ENDED state from the previous transaction.
  * </p>
  * <p>
  * <strong>CRITICAL:</strong> This method must ONLY be called after transaction
  * completion (COMMITTED or ROLLEDBACK state), never while in PREPARED state.
  * </p>
  * 
- * @throws SQLException if hibernation fails
+ * @throws SQLException if sanitization fails
  */
-void hibernate() throws SQLException;
+void sanitizeAfterTransaction() throws SQLException;
 ```
 
-#### 1.2 Implement `hibernate()` in BackendSessionImpl
+#### 1.2 Implement `sanitizeAfterTransaction()` in BackendSessionImpl
 
 ```java
 @Override
-public void hibernate() throws SQLException {
+public void sanitizeAfterTransaction() throws SQLException {
     if (closed) {
-        throw new IllegalStateException("Cannot hibernate closed session");
+        throw new IllegalStateException("Cannot sanitize closed session");
     }
     
-    log.debug("Hibernating backend session: {}", sessionId);
+    log.debug("Sanitizing backend session after transaction: {}", sessionId);
     
     try {
         // Close the current logical connection
@@ -109,30 +146,37 @@ public void hibernate() throws SQLException {
         if (connection != null) {
             try {
                 connection.close();
-                log.debug("Closed logical connection during hibernation");
+                log.debug("Closed logical connection during sanitization");
             } catch (SQLException e) {
-                log.warn("Error closing logical connection during hibernation: {}", e.getMessage());
+                log.warn("Error closing logical connection during sanitization: {}", e.getMessage());
                 // Continue anyway - we'll get a fresh one
             }
         }
         
         // Get a fresh logical connection from the XAConnection
-        // This resets the XA state to idle in most XA drivers
+        // This resets the XA state to IDLE in most XA drivers (PostgreSQL, MySQL, etc.)
         this.connection = xaConnection.getConnection();
         
         // The XAResource should remain the same (from the XAConnection)
-        // No need to re-obtain it
+        // No need to re-obtain it - it's tied to the XAConnection, not the logical connection
         
-        log.debug("Backend session hibernated successfully, fresh logical connection obtained");
+        // Clear warnings on the new connection
+        try {
+            connection.clearWarnings();
+        } catch (SQLException e) {
+            log.warn("Error clearing warnings after sanitization: {}", e.getMessage());
+        }
+        
+        log.debug("Backend session sanitized successfully, fresh logical connection obtained");
         
     } catch (SQLException e) {
-        log.error("Failed to hibernate session: {}", e.getMessage(), e);
+        log.error("Failed to sanitize session: {}", e.getMessage(), e);
         throw e;
     }
 }
 ```
 
-#### 1.3 Call `hibernate()` after transaction completion
+#### 1.3 Call `sanitizeAfterTransaction()` after commit/rollback
 
 In `XATransactionRegistry.xaCommit()`:
 ```java
@@ -141,16 +185,22 @@ public void xaCommit(XidKey xid, boolean onePhase) throws XAException {
     
     ctx.transitionToCommitted();
     
-    // IMPORTANT: Hibernate the session to reset XA state for next transaction
+    // IMPORTANT: Sanitize the session to reset XA state for next transaction
+    // The session stays bound to OJP Session (doesn't return to pool)
+    // but needs XA state reset between transactions
     try {
-        ctx.getSession().hibernate();
-        log.debug("Session hibernated after commit for xid={}", xid);
+        ctx.getSession().sanitizeAfterTransaction();
+        log.debug("Session sanitized after commit for xid={}", xid);
     } catch (SQLException e) {
-        log.warn("Failed to hibernate session after commit for xid={}: {}", xid, e.getMessage());
-        // Don't throw - commit was successful, hibernation is best-effort
+        log.warn("Failed to sanitize session after commit for xid={}: {}", xid, e.getMessage());
+        // Don't throw - commit was successful, sanitization is best-effort
+        // If sanitization fails, next transaction may have issues, but commit succeeded
     }
     
+    // NOTE: Do NOT return session to pool here - session stays bound to OJP Session
+    // for multiple transactions. Pool return happens when OJP Session terminates.
     contexts.remove(xid);
+    
     log.info("XA transaction committed: xid={}, onePhase={}", xid, onePhase);
 }
 ```
@@ -162,16 +212,21 @@ public void xaRollback(XidKey xid) throws XAException {
     
     ctx.transitionToRolledBack();
     
-    // IMPORTANT: Hibernate the session to reset XA state for next transaction
+    // IMPORTANT: Sanitize the session to reset XA state for next transaction
+    // The session stays bound to OJP Session (doesn't return to pool)
+    // but needs XA state reset between transactions
     try {
-        ctx.getSession().hibernate();
-        log.debug("Session hibernated after rollback for xid={}", xid);
+        ctx.getSession().sanitizeAfterTransaction();
+        log.debug("Session sanitized after rollback for xid={}", xid);
     } catch (SQLException e) {
-        log.warn("Failed to hibernate session after rollback for xid={}: {}", xid, e.getMessage());
-        // Don't throw - rollback was successful, hibernation is best-effort
+        log.warn("Failed to sanitize session after rollback for xid={}: {}", xid, e.getMessage());
+        // Don't throw - rollback was successful, sanitization is best-effort
     }
     
+    // NOTE: Do NOT return session to pool here - session stays bound to OJP Session
+    // for multiple transactions. Pool return happens when OJP Session terminates.
     contexts.remove(xid);
+    
     log.info("XA transaction rolled back: xid={}", xid);
 }
 ```
