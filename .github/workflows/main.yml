@@ -1104,15 +1104,13 @@ jobs:
             CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
             echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
             
-            # XA test creates/closes XAConnections per transaction (no pooling)
-            # During initial concurrent phase (5 threads), connection count may spike temporarily
-            # Allow 20-40 connections initially as threads start, then stabilize to 20-25
-            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -le 40 ]; then
-              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT ≤ 40"
+            # Check for 20-25 connections (same as non-XA multinode test)
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -le 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT ≤ 25"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               break
-            elif [ "$CONNECTION_COUNT" -gt 40 ]; then
-              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds expected maximum of 40!"
+            elif [ "$CONNECTION_COUNT" -gt 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds expected maximum of 25!"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               exit 1
             else
