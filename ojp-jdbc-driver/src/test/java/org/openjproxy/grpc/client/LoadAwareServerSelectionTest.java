@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class LoadAwareServerSelectionTest {
 
     private List<ServerEndpoint> endpoints;
-    private ConnectionTracker connectionTracker;
+    private SessionTracker sessionTracker; // Changed from ConnectionTracker
     private HealthCheckConfig loadAwareConfig;
     private HealthCheckConfig roundRobinConfig;
 
@@ -30,7 +30,7 @@ class LoadAwareServerSelectionTest {
             new ServerEndpoint("server3", 1059)
         );
         
-        connectionTracker = new ConnectionTracker();
+        sessionTracker = new SessionTracker(); // Changed to SessionTracker
         
         // Create config with load-aware selection enabled
         loadAwareConfig = HealthCheckConfig.createDefault();
@@ -55,16 +55,19 @@ class LoadAwareServerSelectionTest {
     void testLoadAwareSelectionPicksLeastLoadedServer() throws SQLException {
         // Create manager with load-aware selection enabled
         MultinodeConnectionManager manager = new MultinodeConnectionManager(
-            endpoints, 3, 1000, loadAwareConfig, connectionTracker
+            endpoints, 3, 1000, loadAwareConfig, null // ConnectionTracker not needed for unified mode
         );
         
-        // Simulate connections tracked on different servers
-        // Server1: 5 connections, Server2: 2 connections, Server3: 8 connections
-        simulateConnections(connectionTracker, endpoints.get(0), 5);
-        simulateConnections(connectionTracker, endpoints.get(1), 2);
-        simulateConnections(connectionTracker, endpoints.get(2), 8);
+        // Get the manager's SessionTracker
+        SessionTracker tracker = manager.getSessionTracker();
         
-        // Select a server - should pick server2 (least loaded with 2 connections)
+        // Simulate sessions tracked on different servers
+        // Server1: 5 sessions, Server2: 2 sessions, Server3: 8 sessions
+        simulateSessions(tracker, endpoints.get(0), 5);
+        simulateSessions(tracker, endpoints.get(1), 2);
+        simulateSessions(tracker, endpoints.get(2), 8);
+        
+        // Select a server - should pick server2 (least loaded with 2 sessions)
         ServerEndpoint selected = manager.affinityServer(null);
         
         assertNotNull(selected);
@@ -75,13 +78,15 @@ class LoadAwareServerSelectionTest {
     void testLoadAwareSelectionWithEqualLoadUsesRoundRobin() throws SQLException {
         // Create manager with load-aware selection enabled
         MultinodeConnectionManager manager = new MultinodeConnectionManager(
-            endpoints, 3, 1000, loadAwareConfig, connectionTracker
+            endpoints, 3, 1000, loadAwareConfig, null
         );
         
-        // Simulate equal load on all servers (3 connections each)
-        simulateConnections(connectionTracker, endpoints.get(0), 3);
-        simulateConnections(connectionTracker, endpoints.get(1), 3);
-        simulateConnections(connectionTracker, endpoints.get(2), 3);
+        SessionTracker tracker = manager.getSessionTracker();
+        
+        // Simulate equal load on all servers (3 sessions each)
+        simulateSessions(tracker, endpoints.get(0), 3);
+        simulateSessions(tracker, endpoints.get(1), 3);
+        simulateSessions(tracker, endpoints.get(2), 3);
         
         // With equal load, selection should be fair (round-robin as tie-breaker)
         ServerEndpoint selected1 = manager.affinityServer(null);
@@ -95,10 +100,10 @@ class LoadAwareServerSelectionTest {
     void testLoadAwareSelectionWithNoTrackedConnections() throws SQLException {
         // Create manager with load-aware selection enabled
         MultinodeConnectionManager manager = new MultinodeConnectionManager(
-            endpoints, 3, 1000, loadAwareConfig, connectionTracker
+            endpoints, 3, 1000, loadAwareConfig, null
         );
         
-        // No connections tracked - all servers have 0 connections
+        // No sessions tracked - all servers have 0 sessions
         // Should select the first healthy server
         ServerEndpoint selected = manager.affinityServer(null);
         
@@ -110,13 +115,15 @@ class LoadAwareServerSelectionTest {
     void testLoadAwareSelectionRebalancesOverTime() throws SQLException {
         // Create manager with load-aware selection enabled
         MultinodeConnectionManager manager = new MultinodeConnectionManager(
-            endpoints, 3, 1000, loadAwareConfig, connectionTracker
+            endpoints, 3, 1000, loadAwareConfig, null
         );
         
+        SessionTracker tracker = manager.getSessionTracker();
+        
         // Initially, server1 has more load
-        simulateConnections(connectionTracker, endpoints.get(0), 10);
-        simulateConnections(connectionTracker, endpoints.get(1), 2);
-        simulateConnections(connectionTracker, endpoints.get(2), 2);
+        simulateSessions(tracker, endpoints.get(0), 10);
+        simulateSessions(tracker, endpoints.get(1), 2);
+        simulateSessions(tracker, endpoints.get(2), 2);
         
         // Multiple selections should favor the less loaded servers
         Map<String, Integer> selectionCounts = new HashMap<>();
@@ -125,12 +132,12 @@ class LoadAwareServerSelectionTest {
             assertNotNull(selected);
             selectionCounts.merge(selected.getAddress(), 1, Integer::sum);
             
-            // Simulate this new connection being tracked
-            simulateConnection(connectionTracker, selected);
+            // Simulate this new session being tracked
+            simulateSession(tracker, selected);
         }
         
-        // Server1 (initially 10 connections) should be selected less frequently
-        // than server2 and server3 (initially 2 connections each)
+        // Server1 (initially 10 sessions) should be selected less frequently
+        // than server2 and server3 (initially 2 sessions each)
         int server1Selections = selectionCounts.getOrDefault("server1:1059", 0);
         int server2Selections = selectionCounts.getOrDefault("server2:1059", 0);
         int server3Selections = selectionCounts.getOrDefault("server3:1059", 0);
@@ -148,17 +155,19 @@ class LoadAwareServerSelectionTest {
     void testLoadAwareSelectionIgnoresUnhealthyServers() throws SQLException {
         // Create manager with load-aware selection enabled
         MultinodeConnectionManager manager = new MultinodeConnectionManager(
-            endpoints, 3, 1000, loadAwareConfig, connectionTracker
+            endpoints, 3, 1000, loadAwareConfig, null
         );
         
-        // Server2 has least connections but is unhealthy
-        simulateConnections(connectionTracker, endpoints.get(0), 10);
-        simulateConnections(connectionTracker, endpoints.get(1), 1);
-        simulateConnections(connectionTracker, endpoints.get(2), 8);
+        SessionTracker tracker = manager.getSessionTracker();
+        
+        // Server2 has least sessions but is unhealthy
+        simulateSessions(tracker, endpoints.get(0), 10);
+        simulateSessions(tracker, endpoints.get(1), 1);
+        simulateSessions(tracker, endpoints.get(2), 8);
         endpoints.get(1).setHealthy(false);
         
-        // Should select server3 (8 connections) instead of unhealthy server2 (1 connection)
-        // or heavily loaded server1 (10 connections)
+        // Should select server3 (8 sessions) instead of unhealthy server2 (1 session)
+        // or heavily loaded server1 (10 sessions)
         ServerEndpoint selected = manager.affinityServer(null);
         
         assertNotNull(selected);
@@ -169,13 +178,15 @@ class LoadAwareServerSelectionTest {
     void testRoundRobinModeIgnoresLoad() throws SQLException {
         // Create manager with round-robin mode (load-aware disabled)
         MultinodeConnectionManager manager = new MultinodeConnectionManager(
-            endpoints, 3, 1000, roundRobinConfig, connectionTracker
+            endpoints, 3, 1000, roundRobinConfig, null
         );
         
+        SessionTracker tracker = manager.getSessionTracker();
+        
         // Simulate very unbalanced load
-        simulateConnections(connectionTracker, endpoints.get(0), 100);
-        simulateConnections(connectionTracker, endpoints.get(1), 1);
-        simulateConnections(connectionTracker, endpoints.get(2), 50);
+        simulateSessions(tracker, endpoints.get(0), 100);
+        simulateSessions(tracker, endpoints.get(1), 1);
+        simulateSessions(tracker, endpoints.get(2), 50);
         
         // In round-robin mode, each server should be selected regardless of load
         // Make multiple selections and verify all servers are selected
@@ -211,10 +222,10 @@ class LoadAwareServerSelectionTest {
     void testLoadAwareFallsBackToRoundRobinWhenAllCountsEqual() throws SQLException {
         // Create manager with load-aware selection enabled
         MultinodeConnectionManager manager = new MultinodeConnectionManager(
-            endpoints, 3, 1000, loadAwareConfig, connectionTracker
+            endpoints, 3, 1000, loadAwareConfig, null
         );
         
-        // Don't simulate any connections - ConnectionTracker is empty
+        // Don't simulate any sessions - SessionTracker is empty
         // All servers have count = 0
         
         // Make multiple selections - should use round-robin since all are equal
@@ -245,8 +256,27 @@ class LoadAwareServerSelectionTest {
     }
 
     /**
-     * Helper method to simulate multiple connections on a server.
+     * Helper method to simulate multiple sessions on a server.
      */
+    private void simulateSessions(SessionTracker tracker, ServerEndpoint server, int count) {
+        for (int i = 0; i < count; i++) {
+            String sessionUUID = "session-" + server.getAddress() + "-" + i;
+            tracker.registerSession(sessionUUID, server);
+        }
+    }
+
+    /**
+     * Helper method to simulate a single session on a server.
+     */
+    private void simulateSession(SessionTracker tracker, ServerEndpoint server) {
+        simulateSessions(tracker, server, 1);
+    }
+    
+    /**
+     * Helper method to simulate multiple connections on a server (legacy).
+     * @deprecated Use simulateSessions instead
+     */
+    @Deprecated
     private void simulateConnections(ConnectionTracker tracker, ServerEndpoint server, int count) {
         for (int i = 0; i < count; i++) {
             // Create a unique mock connection object using a simple wrapper
@@ -270,8 +300,10 @@ class LoadAwareServerSelectionTest {
     }
 
     /**
-     * Helper method to simulate a single connection on a server.
+     * Helper method to simulate a single connection on a server (legacy).
+     * @deprecated Use simulateSession instead
      */
+    @Deprecated
     private void simulateConnection(ConnectionTracker tracker, ServerEndpoint server) {
         simulateConnections(tracker, server, 1);
     }
