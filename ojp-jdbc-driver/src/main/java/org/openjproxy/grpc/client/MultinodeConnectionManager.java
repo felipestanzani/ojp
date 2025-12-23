@@ -489,32 +489,21 @@ public class MultinodeConnectionManager {
                     sessionInfo.getTargetServer() != null ? sessionInfo.getTargetServer() : "NULL",
                     sessionInfo.getSessionUUID());
             
-            // Bind session to this server - but only for NEW sessions to avoid re-binding invalidated sessions
+            // Bind session to the server we just connected to
+            // Always use the ServerEndpoint object directly to avoid hostname mismatches
             if (sessionInfo.getSessionUUID() != null && !sessionInfo.getSessionUUID().isEmpty()) {
                 String targetServer = sessionInfo.getTargetServer();
                 
-                log.info("DIAGNOSTIC XA: SessionUUID={}, ConnectedToServer={}, TargetServerFromResponse={}", 
-                        sessionInfo.getSessionUUID(), connectedServerAddress, 
-                        targetServer != null ? targetServer : "NULL");
+                // Bind directly to the ServerEndpoint we just connected to
+                sessionToServerMap.put(sessionInfo.getSessionUUID(), selectedServer);
+                sessionTracker.registerSession(sessionInfo.getSessionUUID(), selectedServer);
                 
-                // Bind the session to the target server from the response
-                if (targetServer != null && !targetServer.isEmpty()) {
-                    bindSession(sessionInfo.getSessionUUID(), targetServer);
-                    if (!targetServer.equals(connectedServerAddress)) {
-                        log.warn("DIAGNOSTIC XA: Session {} bound to targetServer {} which DIFFERS from connected server {}. " +
-                                "If targetServer is wrong, queries may route to incorrect server causing 'Connection not found' errors.", 
-                                sessionInfo.getSessionUUID(), targetServer, connectedServerAddress);
-                    } else {
-                        log.info("=== XA session {} bound to target server {} (matches connected server) ===", 
-                                sessionInfo.getSessionUUID(), targetServer);
-                    }
-                } else {
-                    sessionToServerMap.put(sessionInfo.getSessionUUID(), selectedServer);
-                    log.info("=== XA session {} bound to server {} (fallback, no targetServer) - Map size now: {} ===", 
-                            sessionInfo.getSessionUUID(), connectedServerAddress, sessionToServerMap.size());
-                }
+                log.info("XA session {} bound to server {} (connected endpoint), targetServer from response: {}", 
+                        sessionInfo.getSessionUUID(), 
+                        connectedServerAddress,
+                        targetServer != null ? targetServer : "NULL");
             } else {
-                log.warn("DIAGNOSTIC XA: No sessionUUID from server response! SessionUUID: '{}'. " +
+                log.warn("No sessionUUID from server response! SessionUUID: '{}'. " +
                         "This will cause NULL sessionKey in affinityServer, leading to round-robin routing.", 
                         sessionInfo.getSessionUUID());
             }
@@ -612,36 +601,22 @@ public class MultinodeConnectionManager {
                 server.setHealthy(true);
                 server.setLastFailureTime(0);
                 
-                // NEW: Use targetServer-based binding if available
-                // Bind session using targetServer from response if both sessionUUID and targetServer are present
+                // Bind session to the server we just connected to
+                // Always use the ServerEndpoint object directly to avoid hostname mismatches
                 if (sessionInfo.getSessionUUID() != null && !sessionInfo.getSessionUUID().isEmpty()) {
-                    String targetServer = sessionInfo.getTargetServer();
                     String connectedServerAddress = server.getHost() + ":" + server.getPort();
+                    String targetServer = sessionInfo.getTargetServer();
                     
-                    log.info("DIAGNOSTIC: SessionUUID={}, ConnectedToServer={}, TargetServerFromResponse={}, isXA={}", 
-                            sessionInfo.getSessionUUID(), connectedServerAddress, 
-                            targetServer != null ? targetServer : "NULL", connectionDetails.getIsXA());
+                    // Bind directly to the ServerEndpoint we just connected to
+                    sessionToServerMap.put(sessionInfo.getSessionUUID(), server);
+                    sessionTracker.registerSession(sessionInfo.getSessionUUID(), server);
                     
-                    if (targetServer != null && !targetServer.isEmpty()) {
-                        // Use the server-returned targetServer as authoritative for binding
-                        bindSession(sessionInfo.getSessionUUID(), targetServer);
-                        if (!targetServer.equals(connectedServerAddress)) {
-                            log.warn("DIAGNOSTIC: Session {} bound to targetServer {} which DIFFERS from connected server {}. " +
-                                    "If targetServer is wrong, queries may route to incorrect server causing 'Connection not found' errors.", 
-                                    sessionInfo.getSessionUUID(), targetServer, connectedServerAddress);
-                        } else {
-                            log.info("Session {} bound to target server {} (matches connected server)", 
-                                    sessionInfo.getSessionUUID(), targetServer);
-                        }
-                    } else {
-                        // Fallback: bind using current server endpoint if targetServer not provided
-                        // Use bindSession() to ensure SessionTracker is notified
-                        bindSession(sessionInfo.getSessionUUID(), connectedServerAddress);
-                        log.info("Session {} bound to server {} (fallback, no targetServer in response)", 
-                                sessionInfo.getSessionUUID(), connectedServerAddress);
-                    }
+                    log.info("Session {} bound to server {} (connected endpoint), targetServer from response: {}", 
+                            sessionInfo.getSessionUUID(), 
+                            connectedServerAddress,
+                            targetServer != null ? targetServer : "NULL");
                 } else {
-                    log.warn("DIAGNOSTIC: No sessionUUID from server {}! SessionUUID: '{}'. " +
+                    log.warn("No sessionUUID from server {}! SessionUUID: '{}'. " +
                             "This will cause NULL sessionKey in affinityServer, leading to round-robin routing.", 
                             server.getAddress(), sessionInfo.getSessionUUID());
                 }
