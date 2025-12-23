@@ -416,10 +416,18 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 int maxPoolSize = dsConfig.getMaximumPoolSize();
                 int minIdle = dsConfig.getMinimumIdle();
                 
+                log.info("XA pool creation for connHash {}: initial maxPoolSize={}, minIdle={}", 
+                        connHash, maxPoolSize, minIdle);
+                
                 // Apply multinode pool coordination if server endpoints provided
                 List<String> serverEndpoints = connectionDetails.getServerEndpointsList();
+                log.info("XA pool: serverEndpoints list size={}, endpoints={}", 
+                        serverEndpoints != null ? serverEndpoints.size() : 0,
+                        serverEndpoints);
+                
                 if (serverEndpoints != null && serverEndpoints.size() > 1) {
                     // Multinode: divide pool sizes among servers
+                    log.info("XA pool: applying multinode coordination for {} servers", serverEndpoints.size());
                     MultinodePoolCoordinator.PoolAllocation allocation = 
                             ConnectionPoolConfigurer.getPoolCoordinator().calculatePoolSizes(
                                     connHash, maxPoolSize, minIdle, serverEndpoints);
@@ -429,6 +437,9 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                     
                     log.info("XA multinode pool coordination for {}: {} servers, divided sizes: max={}, min={}", 
                             connHash, serverEndpoints.size(), maxPoolSize, minIdle);
+                } else {
+                    log.warn("XA pool: NOT applying multinode coordination - serverEndpoints is {} or size <= 1", 
+                            serverEndpoints == null ? "null" : "size=" + serverEndpoints.size());
                 }
                 
                 // Build configuration map for XA Pool Provider
