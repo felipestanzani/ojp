@@ -37,6 +37,8 @@ public class Session {
     private XAResource xaResource;
     @Getter
     private Object backendSession; // Holds XABackendSession for XA pooling (avoids hard dependency)
+    @Getter
+    private final String serverAddress; // Server address in "hostname:port" format for unified mode
     private Map<String, ResultSet> resultSetMap;
     private Map<String, Statement> statementMap;
     private Map<String, PreparedStatement> preparedStatementMap;
@@ -47,15 +49,20 @@ public class Session {
     private int transactionTimeout = 0;
 
     public Session(Connection connection, String connectionHash, String clientUUID) {
-        this(connection, connectionHash, clientUUID, false, null);
+        this(connection, connectionHash, clientUUID, false, null, null);
     }
 
     public Session(Connection connection, String connectionHash, String clientUUID, boolean isXA, XAConnection xaConnection) {
+        this(connection, connectionHash, clientUUID, isXA, xaConnection, null);
+    }
+
+    public Session(Connection connection, String connectionHash, String clientUUID, boolean isXA, XAConnection xaConnection, String serverAddress) {
         this.connection = connection;
         this.connectionHash = connectionHash;
         this.clientUUID = clientUUID;
         this.isXA = isXA;
         this.xaConnection = xaConnection;
+        this.serverAddress = serverAddress;
         this.sessionUUID = UUID.randomUUID().toString();
         this.closed = false;
         this.resultSetMap = new ConcurrentHashMap<>();
@@ -159,12 +166,18 @@ public class Session {
 
     public SessionInfo getSessionInfo() {
         log.debug("get session info -> " + this.connectionHash);
-        return SessionInfo.newBuilder()
+        SessionInfo.Builder builder = SessionInfo.newBuilder()
                 .setConnHash(this.connectionHash)
                 .setClientUUID(this.clientUUID)
                 .setSessionUUID(this.sessionUUID)
-                .setIsXA(this.isXA)
-                .build();
+                .setIsXA(this.isXA);
+        
+        // Include targetServer for unified mode session binding
+        if (this.serverAddress != null && !this.serverAddress.isEmpty()) {
+            builder.setTargetServer(this.serverAddress);
+        }
+        
+        return builder.build();
     }
 
     public void addAttr(String key, Object value) {

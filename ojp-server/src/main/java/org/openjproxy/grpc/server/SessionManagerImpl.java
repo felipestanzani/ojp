@@ -23,6 +23,21 @@ public class SessionManagerImpl implements SessionManager {
 
     private Map<String, String> connectionHashMap = new ConcurrentHashMap<>();
     private Map<String, Session> sessionMap = new ConcurrentHashMap<>();
+    private final String serverAddress; // Server address in "hostname:port" format
+
+    public SessionManagerImpl(ServerConfiguration serverConfiguration) {
+        // Build server address from configuration
+        try {
+            String hostname = java.net.InetAddress.getLocalHost().getHostName();
+            int port = serverConfiguration.getServerPort();
+            this.serverAddress = hostname + ":" + port;
+            log.info("SessionManager initialized with server address: {}", serverAddress);
+        } catch (java.net.UnknownHostException e) {
+            // Fallback to localhost if hostname cannot be determined
+            log.warn("Failed to get local hostname, using localhost", e);
+            throw new RuntimeException("Failed to determine server hostname", e);
+        }
+    }
 
     @Override
     public void registerClientUUID(String connectionHash, String clientUUID) {
@@ -33,8 +48,8 @@ public class SessionManagerImpl implements SessionManager {
     @Override
     public SessionInfo createSession(String clientUUID, Connection connection) {
         log.info("Create session for client uuid " + clientUUID);
-        Session session = new Session(connection, connectionHashMap.get(clientUUID), clientUUID);
-        log.info("Session " + session.getSessionUUID() + " created for client uuid " + clientUUID);
+        Session session = new Session(connection, connectionHashMap.get(clientUUID), clientUUID, false, null, serverAddress);
+        log.info("Session " + session.getSessionUUID() + " created for client uuid " + clientUUID + " on server " + serverAddress);
         this.sessionMap.put(session.getSessionUUID(), session);
         return session.getSessionInfo();
     }
@@ -42,8 +57,8 @@ public class SessionManagerImpl implements SessionManager {
     @Override
     public SessionInfo createXASession(String clientUUID, Connection connection, XAConnection xaConnection) {
         log.info("Create XA session for client uuid " + clientUUID);
-        Session session = new Session(connection, connectionHashMap.get(clientUUID), clientUUID, true, xaConnection);
-        log.info("XA Session " + session.getSessionUUID() + " created for client uuid " + clientUUID);
+        Session session = new Session(connection, connectionHashMap.get(clientUUID), clientUUID, true, xaConnection, serverAddress);
+        log.info("XA Session " + session.getSessionUUID() + " created for client uuid " + clientUUID + " on server " + serverAddress);
         this.sessionMap.put(session.getSessionUUID(), session);
         return session.getSessionInfo();
     }
@@ -52,8 +67,8 @@ public class SessionManagerImpl implements SessionManager {
     public SessionInfo createDeferredXASession(String clientUUID, String connectionHash) {
         log.info("Create deferred XA session for client uuid " + clientUUID);
         // Create session without XAConnection - will be bound later via bindXAConnection()
-        Session session = new Session(null, connectionHash, clientUUID, true, null);
-        log.info("Deferred XA Session " + session.getSessionUUID() + " created for client uuid " + clientUUID);
+        Session session = new Session(null, connectionHash, clientUUID, true, null, serverAddress);
+        log.info("Deferred XA Session " + session.getSessionUUID() + " created for client uuid " + clientUUID + " on server " + serverAddress);
         this.sessionMap.put(session.getSessionUUID(), session);
         return session.getSessionInfo();
     }

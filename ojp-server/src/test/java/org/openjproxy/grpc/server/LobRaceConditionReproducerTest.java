@@ -20,7 +20,8 @@ public class LobRaceConditionReproducerTest {
 
     @BeforeEach
     public void setUp() {
-        sessionManager = new SessionManagerImpl();
+        ServerConfiguration config = new ServerConfiguration(); // Use default configuration
+        sessionManager = new SessionManagerImpl(config);
         sessionInfo = SessionInfo.newBuilder()
             .setSessionUUID("test-session")
             .setConnHash("test-conn-hash")
@@ -63,7 +64,8 @@ public class LobRaceConditionReproducerTest {
         // Simulate a scenario where concurrent access might cause issues
         
         // This test shows that our enhanced SessionManagerImpl handles edge cases gracefully
-        SessionManagerImpl concurrentSessionManager = new SessionManagerImpl();
+        ServerConfiguration config = new ServerConfiguration(); // Use default configuration
+        SessionManagerImpl concurrentSessionManager = new SessionManagerImpl(config);
         
         // Multiple threads trying to access LOBs from a session that doesn't exist
         assertDoesNotThrow(() -> {

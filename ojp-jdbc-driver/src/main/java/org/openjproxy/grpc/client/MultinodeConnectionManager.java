@@ -618,15 +618,15 @@ public class MultinodeConnectionManager {
                     String targetServer = sessionInfo.getTargetServer();
                     String connectedServerAddress = server.getHost() + ":" + server.getPort();
                     
-                    log.info("DIAGNOSTIC NON-XA: SessionUUID={}, ConnectedToServer={}, TargetServerFromResponse={}", 
+                    log.info("DIAGNOSTIC: SessionUUID={}, ConnectedToServer={}, TargetServerFromResponse={}, isXA={}", 
                             sessionInfo.getSessionUUID(), connectedServerAddress, 
-                            targetServer != null ? targetServer : "NULL");
+                            targetServer != null ? targetServer : "NULL", connectionDetails.getIsXA());
                     
                     if (targetServer != null && !targetServer.isEmpty()) {
                         // Use the server-returned targetServer as authoritative for binding
                         bindSession(sessionInfo.getSessionUUID(), targetServer);
                         if (!targetServer.equals(connectedServerAddress)) {
-                            log.warn("DIAGNOSTIC NON-XA: Session {} bound to targetServer {} which DIFFERS from connected server {}. " +
+                            log.warn("DIAGNOSTIC: Session {} bound to targetServer {} which DIFFERS from connected server {}. " +
                                     "If targetServer is wrong, queries may route to incorrect server causing 'Connection not found' errors.", 
                                     sessionInfo.getSessionUUID(), targetServer, connectedServerAddress);
                         } else {
@@ -635,12 +635,13 @@ public class MultinodeConnectionManager {
                         }
                     } else {
                         // Fallback: bind using current server endpoint if targetServer not provided
-                        sessionToServerMap.put(sessionInfo.getSessionUUID(), server);
+                        // Use bindSession() to ensure SessionTracker is notified
+                        bindSession(sessionInfo.getSessionUUID(), connectedServerAddress);
                         log.info("Session {} bound to server {} (fallback, no targetServer in response)", 
                                 sessionInfo.getSessionUUID(), connectedServerAddress);
                     }
                 } else {
-                    log.warn("DIAGNOSTIC NON-XA: No sessionUUID from server {}! SessionUUID: '{}'. " +
+                    log.warn("DIAGNOSTIC: No sessionUUID from server {}! SessionUUID: '{}'. " +
                             "This will cause NULL sessionKey in affinityServer, leading to round-robin routing.", 
                             server.getAddress(), sessionInfo.getSessionUUID());
                 }

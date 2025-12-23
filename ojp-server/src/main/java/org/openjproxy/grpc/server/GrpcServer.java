@@ -46,7 +46,7 @@ public class GrpcServer {
         }
 
         // Build server with configuration
-        SessionManagerImpl sessionManager = new SessionManagerImpl();
+        SessionManagerImpl sessionManager = new SessionManagerImpl(config);
         
         ServerBuilder<?> serverBuilder = NettyServerBuilder
                 .forPort(config.getServerPort())
