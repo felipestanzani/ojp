@@ -80,8 +80,7 @@ public class StatementServiceLobHandlingTest {
     @Test 
     public void testSessionManagerImplNullChecks() {
         // Test that SessionManagerImpl properly handles null session scenarios
-        ServerConfiguration config = new ServerConfiguration(); // Use default configuration
-        SessionManagerImpl realSessionManager = new SessionManagerImpl(config);
+        SessionManagerImpl realSessionManager = new SessionManagerImpl();
         
         // This should return null gracefully instead of throwing NPE
         Blob result = realSessionManager.getLob(sessionInfo, "non-existent-lob");

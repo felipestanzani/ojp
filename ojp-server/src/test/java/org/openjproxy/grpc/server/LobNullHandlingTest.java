@@ -74,8 +74,7 @@ public class LobNullHandlingTest {
         // This test simulates concurrent access that might cause race conditions
         
         // Arrange
-        ServerConfiguration config = new ServerConfiguration(); // Use default configuration
-        SessionManagerImpl realSessionManager = new SessionManagerImpl(config);
+        SessionManagerImpl realSessionManager = new SessionManagerImpl();
         Session mockSession = mock(Session.class);
         when(mockSession.getLob(testLobUUID)).thenReturn(null); // Simulate LOB not found
         
