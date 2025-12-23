@@ -1001,8 +1001,7 @@ jobs:
   # Database: PostgreSQL (with XA prepared transactions support)
   # Execution: Only runs AFTER build-test job succeeds (needs: [build-test])
   #
-  # NOTE: Connection count checks use < 1000 as a placeholder threshold.
-  # This will be updated when XA connection pool is implemented in OJP server.
+  # NOTE: Connection count checks expect 20-25 connections, same as non-XA test.
   #
   # ===========================================================================
   multinode-xa-test:
@@ -1166,7 +1165,6 @@ jobs:
           sleep 5
 
       # Verify XA failover: Connections should still be active on server 2
-      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
       - name: Check PostgreSQL connections after killing Server 1
         run: |
           echo "Checking PostgreSQL connections after killing Server 1..."
@@ -1178,14 +1176,12 @@ jobs:
             CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
             echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
             
-            # Placeholder check: just verify we don't exceed 1000 connections
-            # This will be refined when XA connection pool is implemented in OJP server
-            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
-              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               break
-            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
-              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               exit 1
             else
@@ -1229,7 +1225,6 @@ jobs:
           netstat -tuln | grep ':10591' || echo "Warning: Server might not be listening yet"
 
       # Verify XA recovery: Connections should be distributed across both servers again
-      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
       - name: Check PostgreSQL connections after restarting Server 1
         run: |
           echo "Checking PostgreSQL connections after restarting Server 1..."
@@ -1241,14 +1236,12 @@ jobs:
             CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
             echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
             
-            # Placeholder check: just verify we don't exceed 1000 connections
-            # This will be refined when XA connection pool is implemented in OJP server
-            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
-              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               break
-            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
-              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               exit 1
             else
@@ -1303,7 +1296,6 @@ jobs:
           sleep 5
 
       # Verify XA failover: Connections should migrate to server 1
-      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
       - name: Check PostgreSQL connections after killing Server 2
         run: |
           echo "Checking PostgreSQL connections after killing Server 2..."
@@ -1315,14 +1307,12 @@ jobs:
             CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
             echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
             
-            # Placeholder check: just verify we don't exceed 1000 connections
-            # This will be refined when XA connection pool is implemented in OJP server
-            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
-              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               break
-            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
-              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               exit 1
             else
@@ -1366,7 +1356,6 @@ jobs:
           netstat -tuln | grep ':10592' || echo "Warning: Server might not be listening yet"
 
       # Final XA verification: Both servers should be active
-      # Placeholder check: < 1000 connections (will be refined with XA connection pool)
       - name: Check PostgreSQL connections after restarting Server 2
         run: |
           echo "Checking PostgreSQL connections after restarting Server 2..."
@@ -1378,14 +1367,12 @@ jobs:
             CONNECTION_COUNT=$(echo $CONNECTION_COUNT | tr -d '[:space:]')
             echo "Current connections: $CONNECTION_COUNT (elapsed: ${ELAPSED}s)"
             
-            # Placeholder check: just verify we don't exceed 1000 connections
-            # This will be refined when XA connection pool is implemented in OJP server
-            if [ "$CONNECTION_COUNT" -ge 1 ] && [ "$CONNECTION_COUNT" -lt 1000 ]; then
-              echo "✓ Connection count is within placeholder range: 1 ≤ $CONNECTION_COUNT < 1000"
+            if [ "$CONNECTION_COUNT" -ge 20 ] && [ "$CONNECTION_COUNT" -lt 25 ]; then
+              echo "✓ Connection count is within expected range: 20 ≤ $CONNECTION_COUNT < 25"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               break
-            elif [ "$CONNECTION_COUNT" -ge 1000 ]; then
-              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds placeholder maximum of 1000!"
+            elif [ "$CONNECTION_COUNT" -ge 25 ]; then
+              echo "✗ ERROR: Connection count ($CONNECTION_COUNT) exceeds maximum of 25!"
               PGPASSWORD=testpassword psql -h 127.0.0.1 -U testuser -d defaultdb -c "SELECT datname, COUNT(*) AS connections FROM pg_stat_activity WHERE datname='defaultdb' GROUP BY datname ORDER BY connections DESC;"
               exit 1
             else
