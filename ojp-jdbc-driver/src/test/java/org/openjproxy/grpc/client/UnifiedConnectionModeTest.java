@@ -26,31 +26,12 @@ class UnifiedConnectionModeTest {
         server2 = new ServerEndpoint("server2", 1059, "default");
         server3 = new ServerEndpoint("server3", 1059, "default");
         
-        // Create config with unified mode enabled (default)
-        Properties props = new Properties();
-        props.setProperty("ojp.connection.unified.enabled", "true");
-        HealthCheckConfig config = HealthCheckConfig.loadFromProperties(props);
+        // Create config with default settings
+        HealthCheckConfig config = HealthCheckConfig.createDefault();
         
         manager = new MultinodeConnectionManager(
                 Arrays.asList(server1, server2, server3),
                 -1, 5000, config);
-    }
-    
-    @Test
-    void testUnifiedModeIsEnabled() {
-        HealthCheckConfig config = HealthCheckConfig.createDefault();
-        assertTrue(config.isUnifiedModeEnabled(), 
-                "Unified mode should be enabled by default");
-    }
-    
-    @Test
-    void testUnifiedModeCanBeDisabled() {
-        Properties props = new Properties();
-        props.setProperty("ojp.connection.unified.enabled", "false");
-        HealthCheckConfig config = HealthCheckConfig.loadFromProperties(props);
-        
-        assertFalse(config.isUnifiedModeEnabled(), 
-                "Unified mode should be disabled when property is false");
     }
     
     @Test
