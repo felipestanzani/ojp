@@ -402,7 +402,10 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         
         // Check if we already have an XA registry for this connection hash
         XATransactionRegistry registry = xaRegistries.get(connHash);
+        log.info("XA registry cache lookup for {}: exists={}", connHash, registry != null);
+        
         if (registry == null) {
+            log.info("Creating NEW XA registry for connHash: {}", connHash);
             try {
                 // Parse URL to remove OJP-specific prefix (same as non-XA path)
                 String parsedUrl = UrlParser.parseUrl(connectionDetails.getUrl());
@@ -469,7 +472,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 createSlowQuerySegregationManagerForDatasource(connHash, actualMaxXaTransactions, true, xaStartTimeoutMillis);
                 
                 log.info("Created XA pool for connHash {} - maxPoolSize: {}, minIdle: {}, multinode: {}", 
-                        connHash, maxPoolSize, minIdle, serverEndpoints != null && serverEndpoints.size() > 1);
+                        connHash, maxPoolSize, minIdle, serverEndpoints != null && !serverEndpoints.isEmpty());
                 
             } catch (Exception e) {
                 log.error("Failed to create XA Pool Provider registry for connection hash {}: {}", 
@@ -478,6 +481,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 sendSQLExceptionMetadata(sqlException, responseObserver);
                 return;
             }
+        } else {
+            log.info("Reusing EXISTING XA registry for connHash: {} (pool already created with cached sizes)", connHash);
         }
         
         this.sessionManager.registerClientUUID(connHash, connectionDetails.getClientUUID());
