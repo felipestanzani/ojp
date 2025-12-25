@@ -47,6 +47,7 @@ public class TxContext {
     private Integer timeoutSeconds;
     private Boolean readOnlyHint;
     private int associationCount;
+    private boolean transactionComplete;  // Dual-condition lifecycle: true when commit/rollback called, false otherwise
     
     /**
      * Creates a new transaction context in NONEXISTENT state.
@@ -63,6 +64,7 @@ public class TxContext {
         this.createdAtNanos = System.nanoTime();
         this.lastAccessNanos = new AtomicLong(createdAtNanos);
         this.associationCount = 0;
+        this.transactionComplete = false;  // Initially false, set to true on commit/rollback
     }
     
     /**
@@ -196,6 +198,34 @@ public class TxContext {
         lock.lock();
         try {
             this.readOnlyHint = readOnlyHint;
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Checks if the transaction has completed (committed or rolled back).
+     * 
+     * @return true if transaction is complete, false otherwise
+     */
+    public boolean isTransactionComplete() {
+        lock.lock();
+        try {
+            return transactionComplete;
+        } finally {
+            lock.unlock();
+        }
+    }
+    
+    /**
+     * Marks the transaction as complete.
+     * This is called during commit/rollback to indicate the transaction has finished,
+     * but the backend session remains bound to the OJP session until XAConnection.close().
+     */
+    public void markTransactionComplete() {
+        lock.lock();
+        try {
+            this.transactionComplete = true;
         } finally {
             lock.unlock();
         }

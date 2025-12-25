@@ -1411,6 +1411,21 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     public void terminateSession(SessionInfo sessionInfo, StreamObserver<SessionTerminationStatus> responseObserver) {
         try {
             log.info("Terminating session");
+            
+            // Before terminating, return any completed XA backend sessions to pool
+            // This implements the dual-condition lifecycle: sessions are returned when
+            // both transaction is complete AND XAConnection is closed
+            if (sessionInfo.getIsXA()) {
+                String connHash = sessionInfo.getConnHash();
+                XATransactionRegistry registry = xaRegistries.get(connHash);
+                if (registry != null) {
+                    int returnedCount = registry.returnCompletedSessions(sessionInfo.getSessionUUID());
+                    if (returnedCount > 0) {
+                        log.info("Returned {} completed XA backend sessions to pool on session termination", returnedCount);
+                    }
+                }
+            }
+            
             this.sessionManager.terminateSession(sessionInfo);
             responseObserver.onNext(SessionTerminationStatus.newBuilder().setTerminated(true).build());
             responseObserver.onCompleted();
