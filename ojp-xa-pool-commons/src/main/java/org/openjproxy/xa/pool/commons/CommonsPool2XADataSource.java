@@ -230,6 +230,29 @@ public class CommonsPool2XADataSource implements XADataSource {
     public void setMinIdle(int minIdle) {
         log.info("Resizing XA pool: setMinIdle from {} to {}", pool.getMinIdle(), minIdle);
         pool.setMinIdle(minIdle);
+        
+        // After increasing minIdle, ensure idle connections are created immediately
+        // Commons Pool 2 doesn't automatically create idle connections when you increase minIdle
+        try {
+            int currentIdle = pool.getNumIdle();
+            int currentActive = pool.getNumActive();
+            int needed = minIdle - currentIdle;
+            
+            if (needed > 0) {
+                log.info("Creating {} idle connections to reach minIdle={} (current: idle={}, active={})", 
+                        needed, minIdle, currentIdle, currentActive);
+                
+                // Add idle objects to reach minIdle
+                for (int i = 0; i < needed; i++) {
+                    pool.addObject();
+                }
+                
+                log.info("Idle connections created: idle={}, active={}", 
+                        pool.getNumIdle(), pool.getNumActive());
+            }
+        } catch (Exception e) {
+            log.warn("Failed to pre-create idle connections: {}", e.getMessage(), e);
+        }
     }
     
     /**
