@@ -58,62 +58,52 @@ public class MultinodeUrlParser {
      */
     // No synchronization needed: computeIfAbsent on ConcurrentHashMap provides the required atomicity.
     public static ServiceAndUrl getOrCreateStatementService(String url, List<String> dataSourceNames) {
-        try {
-            // Try to parse as multinode URL
-            List<ServerEndpoint> endpoints = MultinodeUrlParser.parseServerEndpoints(url, dataSourceNames);
 
-            if (endpoints.size() > 1) {
-                // Multinode configuration detected - use MultinodeStatementService
-                log.info("Multinode URL detected with {} endpoints: {}",
-                        endpoints.size(), MultinodeUrlParser.formatServerList(endpoints));
+        // Try to parse as multinode URL
+        List<ServerEndpoint> endpoints = MultinodeUrlParser.parseServerEndpoints(url, dataSourceNames);
 
-                // Create a cache key based on all endpoints to ensure same config reuses same service
-                String cacheKey = "multinode:" + MultinodeUrlParser.formatServerList(endpoints);
-                StatementService service = statementServiceCache.computeIfAbsent(cacheKey, k -> {
-                    log.debug("Creating MultinodeStatementService for endpoints: {}",
-                            MultinodeUrlParser.formatServerList(endpoints));
-                    MultinodeConnectionManager connectionManager = new MultinodeConnectionManager(endpoints);
-                    
-                    // Wire in XAConnectionRedistributor for XA connection rebalancing
-                    HealthCheckConfig healthConfig = connectionManager.getHealthCheckConfig();
-                    if (healthConfig != null) {
-                        XAConnectionRedistributor redistributor = new XAConnectionRedistributor(connectionManager, healthConfig);
-                        connectionManager.setXaConnectionRedistributor(redistributor);
-                        log.info("XAConnectionRedistributor wired into MultinodeConnectionManager");
-                    }
-                    
-                    return new MultinodeStatementService(connectionManager, url);
-                });
+        if (endpoints.size() > 1) {
+            // Multinode configuration detected - use MultinodeStatementService
+            log.info("Multinode URL detected with {} endpoints: {}",
+                    endpoints.size(), MultinodeUrlParser.formatServerList(endpoints));
 
-                // For multinode, we need to pass a URL that can be parsed by the server
-                // Use the original URL with the first endpoint for connection metadata
-                String connectionUrl = MultinodeUrlParser.replaceBracketsWithSingleEndpoint(url, endpoints.get(0));
+            // Create a cache key based on all endpoints to ensure same config reuses same service
+            String cacheKey = "multinode:" + MultinodeUrlParser.formatServerList(endpoints);
+            StatementService service = statementServiceCache.computeIfAbsent(cacheKey, k -> {
+                log.debug("Creating MultinodeStatementService for endpoints: {}",
+                        MultinodeUrlParser.formatServerList(endpoints));
+                MultinodeConnectionManager connectionManager = new MultinodeConnectionManager(endpoints);
 
-                // Convert ServerEndpoint list to string list (host:port format)
-                List<String> serverEndpointStrings = endpoints.stream()
-                        .map(ep -> ep.getHost() + ":" + ep.getPort())
-                        .collect(java.util.stream.Collectors.toList());
+                // Wire in XAConnectionRedistributor for XA connection rebalancing
+                HealthCheckConfig healthConfig = connectionManager.getHealthCheckConfig();
+                if (healthConfig != null) {
+                    XAConnectionRedistributor redistributor = new XAConnectionRedistributor(connectionManager, healthConfig);
+                    connectionManager.setXaConnectionRedistributor(redistributor);
+                    log.info("XAConnectionRedistributor wired into MultinodeConnectionManager");
+                }
 
-                return new ServiceAndUrl(service, connectionUrl, serverEndpointStrings, endpoints);
-            } else {
-                // Single-node configuration - use traditional client
-                String cacheKey = "single:" + endpoints.get(0).getAddress();
-                StatementService service = statementServiceCache.computeIfAbsent(cacheKey, k -> {
-                    log.debug("Creating StatementServiceGrpcClient for single-node");
-                    return new StatementServiceGrpcClient();
-                });
+                return new MultinodeStatementService(connectionManager, url);
+            });
 
-                return new ServiceAndUrl(service, url, null, endpoints);
-            }
-        } catch (IllegalArgumentException e) {
-            // URL parsing failed, fall back to single-node client
-            log.debug("URL not recognized as multinode format, using single-node client: {}", e.getMessage());
-            StatementService service = statementServiceCache.computeIfAbsent("default", k -> {
-                log.debug("Creating default StatementServiceGrpcClient");
+            // For multinode, we need to pass a URL that can be parsed by the server
+            // Use the original URL with the first endpoint for connection metadata
+            String connectionUrl = MultinodeUrlParser.replaceBracketsWithSingleEndpoint(url, endpoints.get(0));
+
+            // Convert ServerEndpoint list to string list (host:port format)
+            List<String> serverEndpointStrings = endpoints.stream()
+                    .map(ep -> ep.getHost() + ":" + ep.getPort())
+                    .collect(java.util.stream.Collectors.toList());
+
+            return new ServiceAndUrl(service, connectionUrl, serverEndpointStrings, endpoints);
+        } else {
+            // Single-node configuration - use traditional client
+            String cacheKey = "single:" + endpoints.get(0).getAddress();
+            StatementService service = statementServiceCache.computeIfAbsent(cacheKey, k -> {
+                log.debug("Creating StatementServiceGrpcClient for single-node");
                 return new StatementServiceGrpcClient();
             });
 
-            return new ServiceAndUrl(service, url, null, null);
+            return new ServiceAndUrl(service, url, null, endpoints);
         }
     }
 
