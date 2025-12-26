@@ -652,9 +652,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         // Borrow a XABackendSession from the pool for immediate use
         // Note: Unlike the original "deferred" approach, we allocate eagerly because
         // XA applications expect getConnection() to work immediately, before xaStart()
-        org.openjproxy.xa.pool.XABackendSession backendSession = null;
         try {
-            backendSession = 
+            org.openjproxy.xa.pool.XABackendSession backendSession = 
                     (org.openjproxy.xa.pool.XABackendSession) xaPoolProvider.borrowSession(registry.getPooledXADataSource());
             
             XAConnection xaConnection = backendSession.getXAConnection();
@@ -680,25 +679,6 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         } catch (Exception e) {
             log.error("Failed to borrow XABackendSession from pool for connection hash {}: {}", 
                     connHash, e.getMessage(), e);
-            
-            // CRITICAL FIX: Return the borrowed session back to pool on failure to prevent session leaks
-            // This was causing PostgreSQL "too many clients" errors as leaked sessions bypassed pool limits
-            if (backendSession != null) {
-                try {
-                    xaPoolProvider.returnSession(registry.getPooledXADataSource(), backendSession);
-                    log.debug("Returned leaked session to pool after connect() failure for connHash: {}", connHash);
-                } catch (Exception e2) {
-                    log.error("Failed to return session after connect() failure for connHash: {}", connHash, e2);
-                    // Try to invalidate instead to prevent corrupted session reuse
-                    try {
-                        xaPoolProvider.invalidateSession(registry.getPooledXADataSource(), backendSession);
-                        log.warn("Invalidated session after failed return for connHash: {}", connHash);
-                    } catch (Exception e3) {
-                        log.error("Failed to invalidate session after connect() failure for connHash: {}", connHash, e3);
-                    }
-                }
-            }
-            
             SQLException sqlException = new SQLException("Failed to allocate XA session from pool: " + e.getMessage(), e);
             sendSQLExceptionMetadata(sqlException, responseObserver);
             return;
