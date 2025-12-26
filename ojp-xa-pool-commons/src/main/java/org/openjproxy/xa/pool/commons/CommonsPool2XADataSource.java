@@ -94,13 +94,14 @@ public class CommonsPool2XADataSource implements XADataSource {
      * @throws Exception if session cannot be borrowed for other reasons
      */
     public XABackendSession borrowSession() throws Exception {
-        log.debug("Borrowing session from pool");
+        log.debug("[XA-POOL-BORROW] Attempting to borrow session from pool (before: active={}, idle={}, maxTotal={})",
+                pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal());
         
         try {
             XABackendSession session = pool.borrowObject();
             
-            log.debug("Session borrowed successfully (active={}, idle={})",
-                    pool.getNumActive(), pool.getNumIdle());
+            log.debug("[XA-POOL-BORROW] Session borrowed successfully (after: active={}, idle={}, maxTotal={})",
+                    pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal());
             
             return session;
             
@@ -108,7 +109,7 @@ public class CommonsPool2XADataSource implements XADataSource {
             // Pool exhausted and maxWait timeout expired
             long maxWaitMs = getLongConfig(config, "xa.connectionTimeoutMs", 30000L);
             String errorMsg = String.format(
-                "XA connection pool exhausted: maxTotal=%d, active=%d, idle=%d, timeout=%dms. " +
+                "[XA-POOL-BORROW] POOL EXHAUSTED: maxTotal=%d, active=%d, idle=%d, timeout=%dms. " +
                 "Increase pool size or reduce concurrent XA transactions.",
                 pool.getMaxTotal(), pool.getNumActive(), pool.getNumIdle(), maxWaitMs);
             
@@ -116,7 +117,8 @@ public class CommonsPool2XADataSource implements XADataSource {
             throw new SQLException(errorMsg, "08001", e);
             
         } catch (Exception e) {
-            log.error("Failed to borrow session from pool", e);
+            log.error("[XA-POOL-BORROW] Failed to borrow session from pool (active={}, idle={}, maxTotal={})",
+                    pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal(), e);
             throw e;
         }
     }
@@ -132,19 +134,22 @@ public class CommonsPool2XADataSource implements XADataSource {
      */
     public void returnSession(XABackendSession session) {
         if (session == null) {
+            log.debug("[XA-POOL-RETURN] Skipping return of null session");
             return;
         }
         
-        log.debug("Returning session to pool");
+        log.debug("[XA-POOL-RETURN] Attempting to return session to pool (before: active={}, idle={}, maxTotal={})",
+                pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal());
         
         try {
             pool.returnObject(session);
             
-            log.debug("Session returned successfully (active={}, idle={})",
-                    pool.getNumActive(), pool.getNumIdle());
+            log.debug("[XA-POOL-RETURN] Session returned successfully (after: active={}, idle={}, maxTotal={})",
+                    pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal());
             
         } catch (Exception e) {
-            log.error("Failed to return session to pool", e);
+            log.error("[XA-POOL-RETURN] Failed to return session to pool (active={}, idle={}, maxTotal={})",
+                    pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal(), e);
             // Session will be destroyed by pool
         }
     }
@@ -161,19 +166,22 @@ public class CommonsPool2XADataSource implements XADataSource {
      */
     public void invalidateSession(XABackendSession session) {
         if (session == null) {
+            log.debug("[XA-POOL-INVALIDATE] Skipping invalidation of null session");
             return;
         }
         
-        log.warn("Invalidating session");
+        log.warn("[XA-POOL-INVALIDATE] Invalidating session (before: active={}, idle={}, maxTotal={})",
+                pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal());
         
         try {
             pool.invalidateObject(session);
             
-            log.info("Session invalidated (active={}, idle={})",
-                    pool.getNumActive(), pool.getNumIdle());
+            log.info("[XA-POOL-INVALIDATE] Session invalidated (after: active={}, idle={}, maxTotal={})",
+                    pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal());
             
         } catch (Exception e) {
-            log.error("Failed to invalidate session", e);
+            log.error("[XA-POOL-INVALIDATE] Failed to invalidate session (active={}, idle={}, maxTotal={})",
+                    pool.getNumActive(), pool.getNumIdle(), pool.getMaxTotal(), e);
         }
     }
     

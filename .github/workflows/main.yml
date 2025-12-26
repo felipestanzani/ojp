@@ -1051,21 +1051,23 @@ jobs:
       - name: Build (ojp-server) with JDK 22
         run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
 
-      # Start first OJP server instance on port 10591
+      # Start first OJP server instance on port 10591 with DEBUG logging
       - name: Start OJP Server 1 on port 10591
         run: |
           # Start first server on port 10591 with Prometheus on 9161 (different from multinode-test to avoid conflicts)
-          nohup java -Dojp.server.port=10591 -Dojp.prometheus.port=9161 -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server-xa-1.log 2>&1 &
+          # Enable DEBUG logging for XA pool operations
+          nohup java -Dojp.server.port=10591 -Dojp.prometheus.port=9161 -Dorg.slf4j.simpleLogger.log.org.openjproxy.xa.pool=DEBUG -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server-xa-1.log 2>&1 &
           echo $! > /tmp/ojp-server-xa-1.pid
-          echo "Started OJP Server 1 on gRPC port 10591, Prometheus port 9161 with PID $(cat /tmp/ojp-server-xa-1.pid)"
+          echo "Started OJP Server 1 on gRPC port 10591, Prometheus port 9161 with DEBUG logging, PID $(cat /tmp/ojp-server-xa-1.pid)"
 
-      # Start second OJP server instance on port 10592
+      # Start second OJP server instance on port 10592 with DEBUG logging
       - name: Start OJP Server 2 on port 10592
         run: |
           # Start second server on port 10592 with Prometheus on 9162 (different from multinode-test to avoid conflicts)
-          nohup java -Dojp.server.port=10592 -Dojp.prometheus.port=9162 -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server-xa-2.log 2>&1 &
+          # Enable DEBUG logging for XA pool operations
+          nohup java -Dojp.server.port=10592 -Dojp.prometheus.port=9162 -Dorg.slf4j.simpleLogger.log.org.openjproxy.xa.pool=DEBUG -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server-xa-2.log 2>&1 &
           echo $! > /tmp/ojp-server-xa-2.pid
-          echo "Started OJP Server 2 on gRPC port 10592, Prometheus port 9162 with PID $(cat /tmp/ojp-server-xa-2.pid)"
+          echo "Started OJP Server 2 on gRPC port 10592, Prometheus port 9162 with DEBUG logging, PID $(cat /tmp/ojp-server-xa-2.pid)"
 
       - name: Wait for OJP servers to start
         run: |
@@ -1080,14 +1082,14 @@ jobs:
       - name: Create temp directory for test logs
         run: mkdir -p temp
 
-      # Run the multinode XA integration test in background
+      # Run the multinode XA integration test in background with DEBUG logging
       # This test will create XA connections to both servers and test failover scenarios
       - name: Start MultinodeXAIntegrationTest with nohup
         run: |
-          echo "Starting MultinodeXAIntegrationTest in background..."
-          nohup mvn test -pl ojp-jdbc-driver -Dtest=MultinodeXAIntegrationTest -DmultinodeXATestsEnabled=true -Dgpg.skip=true > temp/MultinodeXAIntegrationTest.log 2>&1 &
+          echo "Starting MultinodeXAIntegrationTest in background with DEBUG logging..."
+          nohup mvn test -pl ojp-jdbc-driver -Dtest=MultinodeXAIntegrationTest -DmultinodeXATestsEnabled=true -Dgpg.skip=true -Dorg.slf4j.simpleLogger.defaultLogLevel=DEBUG -Dorg.slf4j.simpleLogger.log.org.openjproxy=DEBUG > temp/MultinodeXAIntegrationTest.log 2>&1 &
           echo $! > temp/multinode-xa-test.pid
-          echo "MultinodeXAIntegrationTest started with PID $(cat temp/multinode-xa-test.pid)"
+          echo "MultinodeXAIntegrationTest started with DEBUG logging, PID $(cat temp/multinode-xa-test.pid)"
           # Give test time to start
           sleep 20
 
