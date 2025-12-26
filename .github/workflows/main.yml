@@ -1082,12 +1082,12 @@ jobs:
       - name: Create temp directory for test logs
         run: mkdir -p temp
 
-      # Run the multinode XA integration test in background with DEBUG logging
+      # Run the multinode XA integration test in background with DEBUG logging for org.openjproxy packages only
       # This test will create XA connections to both servers and test failover scenarios
       - name: Start MultinodeXAIntegrationTest with nohup
         run: |
           echo "Starting MultinodeXAIntegrationTest in background with DEBUG logging..."
-          nohup mvn test -pl ojp-jdbc-driver -Dtest=MultinodeXAIntegrationTest -DmultinodeXATestsEnabled=true -Dgpg.skip=true -Dorg.slf4j.simpleLogger.defaultLogLevel=DEBUG -Dorg.slf4j.simpleLogger.log.org.openjproxy=DEBUG > temp/MultinodeXAIntegrationTest.log 2>&1 &
+          nohup mvn test -pl ojp-jdbc-driver -Dtest=MultinodeXAIntegrationTest -DmultinodeXATestsEnabled=true -Dgpg.skip=true -Dorg.slf4j.simpleLogger.log.org.openjproxy=DEBUG > temp/MultinodeXAIntegrationTest.log 2>&1 &
           echo $! > temp/multinode-xa-test.pid
           echo "MultinodeXAIntegrationTest started with DEBUG logging, PID $(cat temp/multinode-xa-test.pid)"
           # Give test time to start
