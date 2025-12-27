@@ -637,32 +637,42 @@ public class XATransactionRegistry {
      * @return the number of sessions returned to pool
      */
     public int returnCompletedSessions(String ojpSessionId) {
+        log.info("[XA-RETURN-SESSIONS] returnCompletedSessions called for ojpSessionId={}, total contexts={}", 
+                ojpSessionId, contexts.size());
         int returnedCount = 0;
         List<XidKey> toRemove = new ArrayList<>();
         
         // Find all completed transactions belonging to the specified OJP session and return their sessions
         for (Map.Entry<XidKey, TxContext> entry : contexts.entrySet()) {
             TxContext ctx = entry.getValue();
+            XidKey xidKey = entry.getKey();
+            log.debug("[XA-RETURN-SESSIONS] Evaluating xid={}, isComplete={}, ctxOjpSessionId={}, targetOjpSessionId={}, match={}", 
+                    xidKey, ctx.isTransactionComplete(), ctx.getOjpSessionId(), ojpSessionId, 
+                    ctx.isTransactionComplete() && ojpSessionId.equals(ctx.getOjpSessionId()));
+            
             // IMPORTANT: Only return sessions that belong to the specified OJP session AND are complete
             if (ctx.isTransactionComplete() && ojpSessionId.equals(ctx.getOjpSessionId())) {
-                toRemove.add(entry.getKey());
+                toRemove.add(xidKey);
                 
                 // Return session to pool
                 XABackendSession session = ctx.getSession();
                 if (session != null) {
                     try {
+                        log.info("[XA-POOL-RETURN] BEFORE return: Returning backend session for xid={}, ojpSessionId={}", xidKey, ojpSessionId);
                         poolProvider.returnSession(poolDataSource, session);
                         returnedCount++;
-                        log.debug("Returned backend session to pool for completed transaction xid={}, ojpSessionId={}", entry.getKey(), ojpSessionId);
+                        log.info("[XA-POOL-RETURN] AFTER return: Successfully returned backend session for xid={}, ojpSessionId={}", xidKey, ojpSessionId);
                     } catch (Exception e) {
-                        log.error("Failed to return session to pool for xid={}: {}", entry.getKey(), e.getMessage());
+                        log.error("[XA-POOL-RETURN] Failed to return session to pool for xid={}: {}", xidKey, e.getMessage(), e);
                         // Best effort: try to invalidate
                         try {
                             poolProvider.invalidateSession(poolDataSource, session);
                         } catch (Exception e2) {
-                            log.error("Failed to invalidate session for xid={}", entry.getKey(), e2);
+                            log.error("Failed to invalidate session for xid={}", xidKey, e2);
                         }
                     }
+                } else {
+                    log.warn("[XA-RETURN-SESSIONS] Session is null for completed transaction xid={}", xidKey);
                 }
             }
         }
@@ -673,9 +683,8 @@ public class XATransactionRegistry {
             log.debug("Removed completed transaction from registry: xid={}, ojpSessionId={}", xid, ojpSessionId);
         }
         
-        if (returnedCount > 0) {
-            log.info("Returned {} backend sessions to pool for OJP session {}", returnedCount, ojpSessionId);
-        }
+        log.info("[XA-RETURN-SESSIONS] returnCompletedSessions complete: returned={}, removed={} contexts for ojpSessionId={}", 
+                returnedCount, toRemove.size(), ojpSessionId);
         
         return returnedCount;
     }

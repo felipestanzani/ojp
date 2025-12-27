@@ -224,8 +224,10 @@ public class OjpXAConnection implements XAConnection, ServerHealthListener {
 
     @Override
     public void close() throws SQLException {
-        log.debug("close called");
+        log.info("[XA-CONN-CLOSE] OjpXAConnection.close() called, closed={}, sessionInfo={}", 
+                closed, sessionInfo != null ? sessionInfo.getSessionUUID() : "null");
         if (closed) {
+            log.debug("[XA-CONN-CLOSE] Already closed, returning");
             return;
         }
         
@@ -265,11 +267,15 @@ public class OjpXAConnection implements XAConnection, ServerHealthListener {
         // Close XA session on server (only if it was created)
         if (sessionInfo != null) {
             try {
+                log.info("[XA-CONN-CLOSE] Calling terminateSession for sessionUUID={}", sessionInfo.getSessionUUID());
                 statementService.terminateSession(sessionInfo);
+                log.info("[XA-CONN-CLOSE] terminateSession completed successfully for sessionUUID={}", sessionInfo.getSessionUUID());
             } catch (Exception e) {
-                log.error("Error closing XA session", e);
+                log.error("[XA-CONN-CLOSE] Error calling terminateSession for sessionUUID={}", sessionInfo.getSessionUUID(), e);
                 throw new SQLException("Error closing XA session", e);
             }
+        } else {
+            log.warn("[XA-CONN-CLOSE] sessionInfo is null, terminateSession NOT called");
         }
     }
 
