@@ -38,6 +38,37 @@ public class HealthCheckValidator {
         
         log.debug("Validating server health: {}", endpoint.getAddress());
         
+        // Check if this is a heartbeat check (empty connection details)
+        // Do this BEFORE attempting connection to avoid channel errors
+        if (StringUtils.isBlank(connectionDetails.getUrl()) && 
+            StringUtils.isBlank(connectionDetails.getUser()) &&
+            StringUtils.isBlank(connectionDetails.getPassword())) {
+            log.debug("Using heartbeat health check for {}", endpoint.getAddress());
+            
+            try {
+                // Attempt to get channel and stub for this server
+                MultinodeConnectionManager.ChannelAndStub channelAndStub = 
+                    connectionManager.getChannelAndStub(endpoint);
+                
+                if (channelAndStub == null) {
+                    log.debug("No channel available for {}, attempting to create", endpoint.getAddress());
+                    channelAndStub = connectionManager.createChannelAndStubForEndpoint(endpoint);
+                }
+                
+                // Try heartbeat connection
+                log.debug("Attempting heartbeat connection to {}", endpoint.getAddress());
+                SessionInfo sessionInfo = channelAndStub.blockingStub.connect(connectionDetails);
+                
+                log.info("Server {} heartbeat health check PASSED", endpoint.getAddress());
+                return true;
+                
+            } catch (Exception e) {
+                log.debug("Server {} heartbeat health check FAILED: {}", endpoint.getAddress(), e.getMessage());
+                return false;
+            }
+        }
+        
+        // Full connection test with actual credentials
         try {
             // Attempt to get channel and stub for this server
             MultinodeConnectionManager.ChannelAndStub channelAndStub = 
@@ -51,11 +82,6 @@ public class HealthCheckValidator {
             // Try to establish a test connection
             log.debug("Attempting test connection to {}", endpoint.getAddress());
             SessionInfo sessionInfo = channelAndStub.blockingStub.connect(connectionDetails);
-            if (StringUtils.isBlank(connectionDetails.getUrl()) && StringUtils.isBlank(connectionDetails.getUser()) &&
-            StringUtils.isBlank(connectionDetails.getPassword())) {
-                log.debug("Using default connection details for health check to {}", endpoint.getAddress());
-                return true;
-            }
 
             if (sessionInfo != null && sessionInfo.getSessionUUID() != null && 
                 !sessionInfo.getSessionUUID().isEmpty()) {
