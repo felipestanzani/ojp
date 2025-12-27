@@ -633,6 +633,11 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 registry = new XATransactionRegistry(xaPoolProvider, pooledXADataSource, currentEndpointsHash, maxPoolSize, minIdle);
                 xaRegistries.put(connHash, registry);
                 
+                // Initialize pool with minIdle connections immediately after creation
+                // Without this, the pool starts empty and only creates connections on demand
+                log.info("[XA-POOL-INIT] Initializing XA pool with minIdle={} connections for connHash={}", minIdle, connHash);
+                registry.resizeBackendPool(maxPoolSize, minIdle);
+                
                 // Create slow query segregation manager for XA
                 createSlowQuerySegregationManagerForDatasource(connHash, actualMaxXaTransactions, true, xaStartTimeoutMillis);
                 
