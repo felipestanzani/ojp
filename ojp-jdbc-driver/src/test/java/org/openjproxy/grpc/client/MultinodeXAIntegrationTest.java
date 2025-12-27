@@ -145,9 +145,14 @@ public class MultinodeXAIntegrationTest {
                 try {
                     // Ramp-up delay for this thread
                     if (threadNum > 0) Thread.sleep(threadNum * rampupPerThread);
-                } catch (InterruptedException ignored) {
+                } catch (InterruptedException ie) {
+                    throw new RuntimeException(ie);
                 }
-                runExactQuerySequence(threadNum, driverClass, url, user, password);
+                try {
+                    runExactQuerySequence(threadNum, driverClass, url, user, password);
+                } catch (SQLException e) {
+                    throw new RuntimeException(e);
+                }
             });
         }
         executor.shutdown();
@@ -320,7 +325,10 @@ public class MultinodeXAIntegrationTest {
         }
     }
 
-    private static void runExactQuerySequence(int threadNum, String driverClass, String url, String user, String password) {
+    private static void runExactQuerySequence(int threadNum, String driverClass, String url, String user, String password) throws SQLException {
+
+
+        nonXAHeartbeatQuery(url, user, password);
 
         // Transaction Block 1: create user, create order for that user, add order items
         timeAndRun(() -> {
@@ -1243,6 +1251,22 @@ public class MultinodeXAIntegrationTest {
                 }
                 return null;
             });
+        }
+    }
+
+    /**
+     * This is useful to guarantee that in every thread one non XA query is sent to the database so that in server
+     * restarts the non XA connections are reestablished.
+     */
+    private static void nonXAHeartbeatQuery(String url, String user, String password) throws SQLException {
+        try (Connection conn = java.sql.DriverManager.getConnection(url, user, password)) {
+            try (Statement statement = conn.createStatement()) {
+                statement.execute("SELECT 1");
+                try (ResultSet rs = statement.getResultSet()) {
+                    Integer res = rs.getInt(1);
+                    Assertions.assertEquals(1, res);
+                }
+            }
         }
     }
 
