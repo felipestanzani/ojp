@@ -2,6 +2,8 @@
 
 This document describes the complete flow of a simple XA transaction through the OJP JDBC driver and OJP server, including interactions with PostgreSQL's XA implementation.
 
+> **Note on XA Backend Session Pooling**: As of the unified connection model implementation, XA connections use backend session pooling with Apache Commons Pool 2. This document describes the transaction flow; for details on pool management, session lifecycle, and configuration, see [XA Management Guide](./XA_MANAGEMENT.md).
+
 ## Transaction ID (Xid) Formation
 
 **Where:** Client-side (OJP JDBC Driver test code)
@@ -36,14 +38,27 @@ Application → OjpXADataSource.getXAConnection()
     → StatementServiceGrpcClient.connect(url, user, password, isXA=true)
       → [gRPC] StatementService.connect()
         → StatementServiceImpl.connect() [SERVER]
-          → DataSourceManager.getDataSource(dataSourceName)
-          → createXADataSource(url) // Creates PGXADataSource
-          → xaDataSource.getXAConnection(user, password) [POSTGRESQL XA]
-          → connection = xaConnection.getConnection() [POSTGRESQL XA]
-          → connection.setAutoCommit(true) // For non-XA operations
-          → sessionManager.createXASession(sessionUUID, xaConnection, connection)
+          → handleXAConnectionWithPooling() // XA backend session pooling
+            → XATransactionRegistry.getOrCreatePoolForServer()
+            → CommonsPool2XADataSource.borrowSession() // Pool operation
+              → BackendSessionFactory.makeObject()
+                → Creates PGXADataSource
+                → xaDataSource.getXAConnection(user, password) [POSTGRESQL XA]
+                → Wraps in BackendSessionImpl
+            → BackendSession.open() // Initialize connection
+              → connection = xaConnection.getConnection() [POSTGRESQL XA]
+              → connection.setAutoCommit(true) // For non-XA operations
+            → Returns BackendSession (pooled)
+          → sessionManager.createXASession(sessionUUID, backendSession)
           → Returns SessionInfo(sessionUUID, isXA=true)
 ```
+
+**Backend Session Pooling:**
+- XA connections now use Apache Commons Pool 2 for connection pooling
+- Each server maintains independent pool (configured via `ojp.xa.connection.pool.*`)
+- Sessions borrowed from pool on connect, returned when OJP session closes
+- Pools dynamically resize during multinode failover/recovery
+- See [XA Management Guide](./XA_MANAGEMENT.md) for pool lifecycle details
 
 **Why Both XAConnection and Regular Connection?**
 
@@ -69,13 +84,18 @@ This separation ensures proper transaction boundaries - SQL statements execute t
 - Session object with:
   - `sessionUUID`: Unique identifier
   - `isXA`: true
-  - `xaConnection`: PostgreSQL XAConnection instance
-  - `connection`: Regular JDBC connection from XAConnection
-  - `xaResource`: PostgreSQL XAResource instance
+  - `backendSession`: Pooled BackendSession wrapper containing:
+    - `xaConnection`: PostgreSQL XAConnection instance (pooled)
+    - `connection`: Regular JDBC connection from XAConnection
+    - `xaResource`: PostgreSQL XAResource instance
+    - `serverEndpoint`: Server identity for multinode coordination
+    - Pool state: borrowed (tracked by Commons Pool 2)
 
 **Info Stored:**
 - Client: sessionInfo (UUID, isXA flag), statementService reference
 - Server: Session in SessionManager map, keyed by UUID
+- Pool: BackendSession marked as "active" (borrowed) in pool metrics
+- XA Registry: Transaction contexts mapped by Xid (created on xaStart)
 
 #### Step 3: Get Connection from XA Connection
 **Location:** Client-side only
@@ -110,6 +130,9 @@ Application → xaResource.start(xid, TMNOFLAGS)
         → StatementServiceImpl.xaStart() [SERVER]
           → session = sessionManager.getSession(sessionUUID)
           → xidImpl = convertXid(xidProto) // Convert protobuf to Xid
+          → XATransactionRegistry.registerTransaction(xid, backendSession, ojpSession)
+            → Creates TxContext with state machine (NONEXISTENT → ACTIVE)
+            → Tracks ojpSessionId for dual-condition lifecycle
           → session.getXaResource().start(xidImpl, flags) [POSTGRESQL XA]
 ```
 
@@ -119,13 +142,17 @@ Application → xaResource.start(xid, TMNOFLAGS)
 - Sets connection to XA transaction mode (auto-commit disabled)
 - Stores Xid in internal PostgreSQL XA state
 
-**OJP Behavior:**
-- Passes Xid through as-is (delegation pattern)
-- No transaction state stored in OJP
+**OJP Behavior (XA Registry):**
+- Creates TxContext to track transaction state
+- Registers Xid → BackendSession mapping for transaction lifecycle
+- Tracks ojpSessionId to prevent cross-session session leaks
+- State machine: NONEXISTENT → ACTIVE
 
 **Transaction State:**
 - PostgreSQL: Xid → Connection mapping active
 - Connection: auto-commit OFF, in XA transaction
+- XA Registry: TxContext tracking transaction (state=ACTIVE, transactionComplete=false)
+- Backend Session: Still borrowed from pool, bound to transaction
 
 ---
 
@@ -229,6 +256,10 @@ Application → xaResource.commit(xid, false) // false = two-phase
           → session = sessionManager.getSession(sessionUUID)
           → xidImpl = convertXid(xidProto)
           → session.getXaResource().commit(xidImpl, onePhase) [POSTGRESQL XA]
+          → XATransactionRegistry.markTransactionComplete(xid)
+            → TxContext: transactionComplete = true
+            → State machine: PREPARED → COMMITTED
+            → Backend session NOT returned to pool yet (dual-condition lifecycle)
 ```
 
 **PostgreSQL XA Behavior:**
@@ -237,8 +268,19 @@ Application → xaResource.commit(xid, false) // false = two-phase
 - Removes entry from pg_prepared_xacts
 - Transaction complete
 
-**OJP Behavior:**
-- Delegates to PostgreSQL XA
+**OJP Behavior (XA Registry):**
+- Marks transaction as complete in TxContext
+- Updates state machine: PREPARED → COMMITTED
+- Backend session remains bound to OJP session (NOT returned to pool)
+- Session will be returned when BOTH conditions met:
+  1. ✅ Transaction complete (commit/rollback called)
+  2. ⏳ XAConnection closed (OJP session terminated)
+
+**Transaction State:**
+- PostgreSQL: Transaction committed, Xid no longer tracked
+- XA Registry: TxContext marked complete (transactionComplete=true)
+- Backend Session: Still borrowed, bound to OJP session
+- Pool: Session still tracked as "active" (not yet returned)
 
 ---
 
@@ -267,7 +309,7 @@ Application → xaResource.rollback(xid)
 
 ### Phase 6: Cleanup
 
-#### Step 10: Close Connection
+#### Step 10: Close Connection (Dual-Condition Lifecycle)
 **Location:** Client → Server gRPC call
 ```
 Application → connection.close()
@@ -279,14 +321,49 @@ Application → connection.close()
             → StatementServiceImpl.terminateSession() [SERVER]
               → session = sessionManager.getSession(sessionUUID)
               → session.terminate()
-                → xaConnection.close() [POSTGRESQL XA] (for XA sessions)
+                → FOR XA BACKEND SESSIONS (pooled):
+                  → NO cleanup here (pool manages lifecycle)
+                  → XATransactionRegistry.returnCompletedSessions(ojpSessionId)
+                    → Finds all TxContext where:
+                      - ojpSessionId matches
+                      - transactionComplete = true
+                    → For each completed transaction:
+                      → poolProvider.returnSession(backendSession)
+                        → Commons Pool 2: pool.returnObject(backendSession)
+                        → BackendSessionFactory.passivateObject()
+                          → backendSession.reset() // Clean state
+                          → Connection stays open (recycled for next use)
+                        → Pool metrics: active--, idle++
               → sessionManager.removeSession(sessionUUID)
 ```
 
-**PostgreSQL XA Behavior:**
-- Closes XAConnection
-- Releases database resources
-- Connection no longer usable
+**Backend Session Pooling Behavior:**
+- Backend session returned to pool (NOT closed)
+- Commons Pool 2 calls passivateObject() → reset() to clean state
+- Physical PostgreSQL XAConnection stays open for reuse
+- Pool metrics updated: session moves from "active" to "idle"
+- Next XA connection request reuses this session from idle pool
+
+**Dual-Condition Lifecycle:**
+Both conditions must be met before session returned to pool:
+1. ✅ Transaction complete (commit/rollback called) - met in Step 9
+2. ✅ XAConnection closed (OJP session terminated) - met in Step 10
+
+This ensures:
+- Sessions not returned mid-transaction
+- Multiple sequential transactions can use same backend session
+- Proper resource cleanup only when OJP session ends
+- XA spec compliance (connection properties persist across transactions)
+
+**What Gets Closed:**
+- ❌ PostgreSQL XAConnection: NO (kept open, returned to pool)
+- ✅ OJP Session: YES (removed from SessionManager)
+- ✅ gRPC Channel state: YES (client-side cleanup)
+
+**Pool State After:**
+- Backend session: idle in pool, ready for reuse
+- Pool size unchanged (session recycled, not destroyed)
+- Physical PostgreSQL connection: open, connected
 
 ---
 
@@ -348,9 +425,19 @@ Application → Logical Connection (OjpXALogicalConnection) → Server XA Sessio
 ## Key Points
 
 ### OJP's Role
+- **Backend Session Pooling**: OJP manages XA connection pools using Apache Commons Pool 2
+- **Dual-Condition Lifecycle**: Sessions returned to pool when BOTH transaction complete AND XAConnection closed
 - **Delegation Pattern**: OJP doesn't implement XA logic, it delegates to PostgreSQL XAResource
-- **Session Management**: OJP manages the session lifecycle and routes operations to the correct XA session
+- **Session Management**: OJP manages the OJP session lifecycle and routes operations to pooled backend sessions
 - **Protocol Translation**: Converts between gRPC and JDBC/XA interfaces
+- **Pool Coordination**: Coordinates pool sizing across multinode servers during failover/recovery
+
+### Backend Session Pool's Role
+- **Connection Reuse**: Physical XAConnections recycled across multiple OJP sessions
+- **State Management**: BackendSession.reset() cleans state between uses while keeping connection open
+- **Resource Efficiency**: Eliminates connection establishment overhead (50-200ms per transaction)
+- **Dynamic Resizing**: Pools grow/shrink based on multinode cluster health
+- **Lifecycle Control**: Pool factory methods (makeObject, passivateObject, destroyObject) manage full lifecycle
 
 ### PostgreSQL XA's Role
 - **Transaction Management**: Implements all XA protocol logic
@@ -369,11 +456,15 @@ Application → Logical Connection (OjpXALogicalConnection) → Server XA Sessio
 - `sessionInfo`: Contains UUID and isXA flag
 - `statementService`: Reference for gRPC communication
 - No transaction state
+- No pool state
 
 #### Server Side (OJP):
-- `Session` object: Maps UUID → XAConnection, Connection, XAResource
+- `Session` object: Maps UUID → BackendSession (pooled)
 - `SessionManager`: Maps UUID → Session
-- No transaction state (delegated to PostgreSQL)
+- `XATransactionRegistry`: Maps Xid → TxContext (transaction state machine)
+- `TxContext`: Tracks transaction state (ACTIVE/ENDED/PREPARED/COMMITTED/ROLLEDBACK)
+- `CommonsPool2XADataSource`: Pool per server endpoint (active, idle, maxTotal metrics)
+- No PostgreSQL transaction state (delegated to database)
 
 #### PostgreSQL Side:
 - XA transaction state: Xid → Connection mapping
