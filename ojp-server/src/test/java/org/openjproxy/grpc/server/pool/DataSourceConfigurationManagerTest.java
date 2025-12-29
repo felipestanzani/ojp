@@ -179,4 +179,28 @@ public class DataSourceConfigurationManagerTest {
         assertTrue(str.contains("8"));
         assertTrue(str.contains("12000"));
     }
+
+    @Test
+    public void testPoolEnabledProperty() {
+        // Test pool enabled (default)
+        Properties props1 = new Properties();
+        props1.setProperty(CommonConstants.DATASOURCE_NAME_PROPERTY, "pooledDS");
+        
+        DataSourceConfigurationManager.DataSourceConfiguration config1 = 
+                DataSourceConfigurationManager.getConfiguration(props1);
+        
+        assertTrue(config1.isPoolEnabled(), "Pool should be enabled by default");
+
+        DataSourceConfigurationManager.clearCache();
+
+        // Test pool explicitly disabled
+        Properties props2 = new Properties();
+        props2.setProperty(CommonConstants.DATASOURCE_NAME_PROPERTY, "unpooledDS");
+        props2.setProperty(CommonConstants.POOL_ENABLED_PROPERTY, "false");
+        
+        DataSourceConfigurationManager.DataSourceConfiguration config2 = 
+                DataSourceConfigurationManager.getConfiguration(props2);
+        
+        assertFalse(config2.isPoolEnabled(), "Pool should be disabled when property is false");
+    }
 }
