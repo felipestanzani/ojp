@@ -74,17 +74,17 @@ public class DataSourceConfigurationManager {
         
         public XADataSourceConfiguration(String dataSourceName, Properties properties) {
             this.dataSourceName = dataSourceName;
-            // Try XA-specific properties first, fall back to regular properties if not found
+            // Use XA-specific properties with XA defaults (no fallback to non-XA properties)
             this.maximumPoolSize = getIntProperty(properties, CommonConstants.XA_MAXIMUM_POOL_SIZE_PROPERTY, 
-                    getIntProperty(properties, CommonConstants.MAXIMUM_POOL_SIZE_PROPERTY, CommonConstants.DEFAULT_MAXIMUM_POOL_SIZE));
+                    CommonConstants.DEFAULT_XA_MAXIMUM_POOL_SIZE);
             this.minimumIdle = getIntProperty(properties, CommonConstants.XA_MINIMUM_IDLE_PROPERTY,
-                    getIntProperty(properties, CommonConstants.MINIMUM_IDLE_PROPERTY, CommonConstants.DEFAULT_MINIMUM_IDLE));
+                    CommonConstants.DEFAULT_XA_MINIMUM_IDLE);
             this.idleTimeout = getLongProperty(properties, CommonConstants.XA_IDLE_TIMEOUT_PROPERTY,
-                    getLongProperty(properties, CommonConstants.IDLE_TIMEOUT_PROPERTY, CommonConstants.DEFAULT_IDLE_TIMEOUT));
+                    CommonConstants.DEFAULT_IDLE_TIMEOUT);
             this.maxLifetime = getLongProperty(properties, CommonConstants.XA_MAX_LIFETIME_PROPERTY,
-                    getLongProperty(properties, CommonConstants.MAX_LIFETIME_PROPERTY, CommonConstants.DEFAULT_MAX_LIFETIME));
+                    CommonConstants.DEFAULT_MAX_LIFETIME);
             this.connectionTimeout = getLongProperty(properties, CommonConstants.XA_CONNECTION_TIMEOUT_PROPERTY,
-                    getLongProperty(properties, CommonConstants.CONNECTION_TIMEOUT_PROPERTY, CommonConstants.DEFAULT_CONNECTION_TIMEOUT));
+                    CommonConstants.DEFAULT_CONNECTION_TIMEOUT);
             this.poolEnabled = getBooleanProperty(properties, CommonConstants.XA_POOL_ENABLED_PROPERTY, true);
             
             // Evictor configuration (XA-specific only, no fallback to non-XA)
@@ -185,11 +185,7 @@ public class DataSourceConfigurationManager {
                     CommonConstants.XA_POOL_ENABLED_PROPERTY,
                     CommonConstants.XA_TIME_BETWEEN_EVICTION_RUNS_PROPERTY,
                     CommonConstants.XA_NUM_TESTS_PER_EVICTION_RUN_PROPERTY,
-                    CommonConstants.XA_SOFT_MIN_EVICTABLE_IDLE_TIME_PROPERTY,
-                    // Include fallback properties in hash too
-                    CommonConstants.MAXIMUM_POOL_SIZE_PROPERTY,
-                    CommonConstants.MINIMUM_IDLE_PROPERTY,
-                    CommonConstants.POOL_ENABLED_PROPERTY
+                    CommonConstants.XA_SOFT_MIN_EVICTABLE_IDLE_TIME_PROPERTY
             };
         } else {
             keys = new String[] {
