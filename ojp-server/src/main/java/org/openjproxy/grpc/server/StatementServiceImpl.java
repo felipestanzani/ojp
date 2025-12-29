@@ -297,45 +297,9 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
         String connHash = ConnectionHashGenerator.hashConnectionDetails(connectionDetails);
 
-        // Extract maxXaTransactions from properties
+        // Use default XA configuration values (deprecated pass-through properties no longer supported)
         int maxXaTransactions = org.openjproxy.constants.CommonConstants.DEFAULT_MAX_XA_TRANSACTIONS;
         long xaStartTimeoutMillis = org.openjproxy.constants.CommonConstants.DEFAULT_XA_START_TIMEOUT_MILLIS;
-        
-        if (!connectionDetails.getPropertiesList().isEmpty()) {
-            try {
-                Map<String, Object> clientPropertiesMap = ProtoConverter.propertiesFromProto(connectionDetails.getPropertiesList());
-                
-                // Convert to Properties object for compatibility
-                Properties clientProperties = new Properties();
-                clientProperties.putAll(clientPropertiesMap);
-                
-                // Extract maxXaTransactions if configured
-                String maxXaTransactionsStr = clientProperties.getProperty(
-                        org.openjproxy.constants.CommonConstants.MAX_XA_TRANSACTIONS_PROPERTY);
-                if (maxXaTransactionsStr != null) {
-                    try {
-                        maxXaTransactions = Integer.parseInt(maxXaTransactionsStr);
-                        log.debug("Using configured maxXaTransactions: {}", maxXaTransactions);
-                    } catch (NumberFormatException e) {
-                        log.warn("Invalid maxXaTransactions value '{}', using default: {}", maxXaTransactionsStr, maxXaTransactions);
-                    }
-                }
-                
-                // Extract xaStartTimeoutMillis if configured
-                String xaStartTimeoutStr = clientProperties.getProperty(
-                        org.openjproxy.constants.CommonConstants.XA_START_TIMEOUT_PROPERTY);
-                if (xaStartTimeoutStr != null) {
-                    try {
-                        xaStartTimeoutMillis = Long.parseLong(xaStartTimeoutStr);
-                        log.debug("Using configured xaStartTimeoutMillis: {}", xaStartTimeoutMillis);
-                    } catch (NumberFormatException e) {
-                        log.warn("Invalid xaStartTimeoutMillis value '{}', using default: {}", xaStartTimeoutStr, xaStartTimeoutMillis);
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("Failed to deserialize client properties for XA config, using defaults: {}", e.getMessage());
-            }
-        }
         
         log.info("connect connHash = {}, isXA = {}, maxXaTransactions = {}, xaStartTimeout = {}ms", 
                 connHash, connectionDetails.getIsXA(), maxXaTransactions, xaStartTimeoutMillis);
