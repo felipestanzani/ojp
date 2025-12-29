@@ -9,7 +9,7 @@
 #    - SQL Server: mssql-jdbc-*.jar from https://learn.microsoft.com/en-us/sql/connect/jdbc/download-microsoft-jdbc-driver-for-sql-server
 #    - DB2: db2jcc*.jar from IBM
 #
-# 2. Place the downloaded JAR files in a ./drivers directory next to this Dockerfile
+# 2. Place the downloaded JAR files in an ./ojp-libs directory next to this Dockerfile
 #
 # 3. Build the image:
 #    docker build -f Dockerfile.proprietary -t ojp:proprietary .
@@ -18,20 +18,20 @@
 #    docker run -p 1059:1059 ojp:proprietary
 #
 # EXAMPLE:
-# $ mkdir drivers
-# $ cp ~/Downloads/ojdbc11.jar drivers/
+# $ mkdir ojp-libs
+# $ cp ~/Downloads/ojdbc11.jar ojp-libs/
 # $ docker build -f Dockerfile.proprietary -t my-company/ojp:1.0.0 .
 # $ docker run -d -p 1059:1059 my-company/ojp:1.0.0
 
 # Start from the base OJP image
 FROM rrobetti/ojp:0.3.2-snapshot
 
-# Copy proprietary driver JARs into the container's drivers directory
-# The drivers directory should contain your proprietary JDBC driver JARs
-COPY drivers/*.jar /opt/ojp/drivers/
+# Copy proprietary driver JARs into the container's external libraries directory
+# The ojp-libs directory should contain your proprietary JDBC driver JARs
+COPY ojp-libs/*.jar /opt/ojp/ojp-libs/
 
 # Optional: Set any additional environment variables or JVM flags
-# ENV OJP_DRIVERS_PATH=/opt/ojp/drivers
+# ENV OJP_LIBS_PATH=/opt/ojp/ojp-libs
 # ENV JAVA_OPTS="-Xmx2g -Xms512m"
 
 # The base image already exposes port 1059 and sets the entrypoint

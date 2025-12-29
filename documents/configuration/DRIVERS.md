@@ -33,30 +33,30 @@ Download the required JDBC driver from the vendor:
 #### Step 2: Create Drivers Directory
 
 ```bash
-mkdir -p ./drivers
+mkdir -p ./ojp-libs
 ```
 
 #### Step 3: Copy Driver JARs
 
 ```bash
 # Example for Oracle
-cp ~/Downloads/ojdbc11.jar ./drivers/
+cp ~/Downloads/ojdbc11.jar ./ojp-libs/
 
 # Example for SQL Server
-cp ~/Downloads/mssql-jdbc-12.4.2.jre11.jar ./drivers/
+cp ~/Downloads/mssql-jdbc-12.4.2.jre11.jar ./ojp-libs/
 
 # Example for DB2
-cp ~/Downloads/db2jcc4.jar ./drivers/
+cp ~/Downloads/db2jcc4.jar ./ojp-libs/
 ```
 
 #### Step 4: Run OJP Server
 
 ```bash
-# Default location (./drivers)
+# Default location (./ojp-libs)
 java -jar ojp-server-0.3.2-snapshot-shaded.jar
 
 # Custom location
-java -Dojp.drivers.path=/path/to/drivers -jar ojp-server-0.3.2-snapshot-shaded.jar
+java -Dojp.libs.path=/path/to/ojp-libs -jar ojp-server-0.3.2-snapshot-shaded.jar
 ```
 
 ### Option 2: Docker with Volume Mount
@@ -64,11 +64,11 @@ java -Dojp.drivers.path=/path/to/drivers -jar ojp-server-0.3.2-snapshot-shaded.j
 #### Step 1: Download and Prepare Drivers
 
 ```bash
-# Create drivers directory on host
-mkdir -p ./drivers
+# Create external libraries directory on host
+mkdir -p ./ojp-libs
 
 # Download and copy drivers
-cp ~/Downloads/ojdbc11.jar ./drivers/
+cp ~/Downloads/ojdbc11.jar ./ojp-libs/
 ```
 
 #### Step 2: Run Container with Volume
@@ -76,11 +76,11 @@ cp ~/Downloads/ojdbc11.jar ./drivers/
 ```bash
 docker run -d \
   -p 1059:1059 \
-  -v $(pwd)/drivers:/opt/ojp/drivers \
+  -v $(pwd)/ojp-libs:/opt/ojp/ojp-libs \
   rrobetti/ojp:0.3.2-snapshot
 ```
 
-The container is pre-configured to look for drivers in `/opt/ojp/drivers`.
+The container is pre-configured to look for drivers in `/opt/ojp/ojp-libs`.
 
 ### Option 3: Docker - Custom Image Build
 
@@ -89,8 +89,8 @@ This option creates a single container image with drivers embedded.
 #### Step 1: Download Drivers
 
 ```bash
-mkdir -p ./drivers
-cp ~/Downloads/ojdbc11.jar ./drivers/
+mkdir -p ./ojp-libs
+cp ~/Downloads/ojdbc11.jar ./ojp-libs/
 ```
 
 #### Step 2: Build Custom Image
@@ -116,29 +116,29 @@ services:
     ports:
       - "1059:1059"
     volumes:
-      - ./drivers:/opt/ojp/drivers
+      - ./ojp-libs:/opt/ojp/ojp-libs
     environment:
-      - OJP_DRIVERS_PATH=/opt/ojp/drivers
+      - OJP_LIBS_PATH=/opt/ojp/ojp-libs
 ```
 
 ## Configuration
 
 ### Environment Variables
 
-You can configure the drivers directory using environment variables:
+You can configure the external libraries directory using environment variables:
 
 ```bash
 # Using environment variable (underscores and uppercase)
-export OJP_DRIVERS_PATH=/custom/path/to/drivers
+export OJP_LIBS_PATH=/custom/path/to/ojp-libs
 
 # Or using JVM system property (dots and lowercase)
-java -Dojp.drivers.path=/custom/path/to/drivers -jar ojp-server.jar
+java -Dojp.libs.path=/custom/path/to/ojp-libs -jar ojp-server.jar
 ```
 
 ### Default Paths
 
-- **Runnable JAR**: `./drivers` (relative to current directory)
-- **Docker**: `/opt/ojp/drivers`
+- **Runnable JAR**: `./ojp-libs` (relative to current directory)
+- **Docker**: `/opt/ojp/ojp-libs`
 
 ## Verification
 
@@ -149,7 +149,7 @@ When OJP starts, check the logs for driver loading messages:
 ```
 INFO  Loading external JDBC drivers...
 INFO  Loading driver JAR: ojdbc11.jar
-INFO  Successfully loaded 1 driver JAR(s) from: /opt/ojp/drivers
+INFO  Successfully loaded 1 driver JAR(s) from: /opt/ojp/ojp-libs
 INFO  Oracle JDBC driver loaded successfully
 ```
 
@@ -158,7 +158,7 @@ INFO  Oracle JDBC driver loaded successfully
 ```
 INFO  Oracle JDBC driver not found. To use Oracle databases:
 INFO    1. Download ojdbc*.jar from Oracle (https://www.oracle.com/database/technologies/jdbc-downloads.html)
-INFO    2. Place it in: /opt/ojp/drivers
+INFO    2. Place it in: /opt/ojp/ojp-libs
 INFO    3. Restart OJP Server
 ```
 
@@ -185,7 +185,7 @@ spec:
         image: rrobetti/ojp:0.3.2-snapshot
         volumeMounts:
         - name: drivers
-          mountPath: /opt/ojp/drivers
+          mountPath: /opt/ojp/ojp-libs
       volumes:
       - name: drivers
         configMap:
@@ -209,19 +209,19 @@ spec:
         - sh
         - -c
         - |
-          curl -o /drivers/ojdbc11.jar $ORACLE_DRIVER_URL
+          curl -o /ojp-libs/ojdbc11.jar $ORACLE_DRIVER_URL
         env:
         - name: ORACLE_DRIVER_URL
-          value: "https://your-internal-repo/drivers/ojdbc11.jar"
+          value: "https://your-internal-repo/ojp-libs/ojdbc11.jar"
         volumeMounts:
         - name: drivers
-          mountPath: /drivers
+          mountPath: /ojp-libs
       containers:
       - name: ojp
         image: rrobetti/ojp:0.3.2-snapshot
         volumeMounts:
         - name: drivers
-          mountPath: /opt/ojp/drivers
+          mountPath: /opt/ojp/ojp-libs
       volumes:
       - name: drivers
         emptyDir: {}
@@ -261,10 +261,10 @@ spec:
 **Solutions**:
 ```bash
 # Fix permissions
-chmod 644 ./drivers/*.jar
+chmod 644 ./ojp-libs/*.jar
 
 # For Docker volume mounts
-chown -R 1000:1000 ./drivers/
+chown -R 1000:1000 ./ojp-libs/
 ```
 
 ## Best Practices
@@ -284,7 +284,7 @@ build-ojp-with-drivers:
   stage: build
   script:
     - mkdir drivers
-    - curl -o drivers/ojdbc11.jar $ORACLE_DRIVER_URL
+    - curl -o ojp-libs/ojdbc11.jar $ORACLE_DRIVER_URL
     - docker build -f Dockerfile.proprietary -t $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA .
     - docker push $CI_REGISTRY_IMAGE:$CI_COMMIT_SHA
 ```
@@ -302,7 +302,7 @@ jobs:
       - name: Download drivers
         run: |
           mkdir drivers
-          curl -o drivers/ojdbc11.jar ${{ secrets.ORACLE_DRIVER_URL }}
+          curl -o ojp-libs/ojdbc11.jar ${{ secrets.ORACLE_DRIVER_URL }}
       - name: Build Docker image
         run: docker build -f Dockerfile.proprietary -t ojp:latest .
 ```
@@ -318,7 +318,7 @@ jobs:
 ## FAQs
 
 **Q: Can I use multiple proprietary drivers?**  
-A: Yes, place all required JAR files in the drivers directory.
+A: Yes, place all required JAR files in the external libraries directory.
 
 **Q: What if I don't need proprietary drivers?**  
 A: No action needed. OJP works with open-source drivers out of the box.
@@ -327,10 +327,10 @@ A: No action needed. OJP works with open-source drivers out of the box.
 A: No, OJP loads drivers at startup. Restart the server to load new drivers.
 
 **Q: Does this work with JDBC driver dependencies?**  
-A: Yes, place all required JARs (driver + dependencies) in the drivers directory.
+A: Yes, place all required JARs (driver + dependencies) in the external libraries directory.
 
 **Q: Can I use this with embedded OJP?**  
-A: Yes, set `ojp.drivers.path` before initializing OJP components.
+A: Yes, set `ojp.libs.path` before initializing OJP components.
 
 ## Support
 

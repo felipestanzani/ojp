@@ -11,7 +11,10 @@ dependency-reduced-pom.xml
 # ignore temp directory for test logs
 temp/
 
-# Proprietary JDBC drivers (should not be committed)
+# Proprietary JDBC drivers and external libraries (should not be committed)
 drivers/
+ojp-libs/
 **/drivers/*.jar
+**/ojp-libs/*.jar
 ojp-server/target/empty-drivers/
+ojp-server/target/empty-libs/

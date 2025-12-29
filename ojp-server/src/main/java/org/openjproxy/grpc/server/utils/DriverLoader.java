@@ -24,12 +24,12 @@ public class DriverLoader {
      * Loads all JAR files from the specified directory into the classpath.
      * Creates the directory if it doesn't exist.
      * 
-     * @param driversPath Path to the directory containing driver JAR files
+     * @param driversPath Path to the directory containing external library JAR files
      * @return true if loading was successful (even if no JARs found), false on error
      */
     public boolean loadDriversFromPath(String driversPath) {
         if (driversPath == null || driversPath.trim().isEmpty()) {
-            log.debug("No drivers path configured, skipping external driver loading");
+            log.debug("No external libraries path configured, skipping external driver loading");
             return true;
         }
         
@@ -39,18 +39,18 @@ public class DriverLoader {
         if (!Files.exists(driverDir)) {
             try {
                 Files.createDirectories(driverDir);
-                log.info("Created drivers directory: {}", driverDir.toAbsolutePath());
+                log.info("Created external libraries directory: {}", driverDir.toAbsolutePath());
                 log.info("Place proprietary JDBC drivers (e.g., ojdbc*.jar) in this directory");
                 return true;
             } catch (Exception e) {
-                log.error("Failed to create drivers directory: {}", driverDir.toAbsolutePath(), e);
+                log.error("Failed to create external libraries directory: {}", driverDir.toAbsolutePath(), e);
                 return false;
             }
         }
         
         // Check if it's a directory
         if (!Files.isDirectory(driverDir)) {
-            log.error("Drivers path exists but is not a directory: {}", driverDir.toAbsolutePath());
+            log.error("External libraries path exists but is not a directory: {}", driverDir.toAbsolutePath());
             return false;
         }
         
@@ -60,7 +60,7 @@ public class DriverLoader {
         File[] files = dir.listFiles((d, name) -> name.toLowerCase().endsWith(".jar"));
         
         if (files == null || files.length == 0) {
-            log.info("No JAR files found in drivers directory: {}", driverDir.toAbsolutePath());
+            log.info("No JAR files found in external libraries directory: {}", driverDir.toAbsolutePath());
             return true;
         }
         
@@ -73,7 +73,7 @@ public class DriverLoader {
             List<URL> urls = new ArrayList<>();
             for (File jarFile : jarFiles) {
                 urls.add(jarFile.toURI().toURL());
-                log.info("Loading driver JAR: {}", jarFile.getName());
+                log.info("Loading external library JAR: {}", jarFile.getName());
             }
             
             // Create a new URLClassLoader with the JAR files
@@ -83,11 +83,11 @@ public class DriverLoader {
             // Set the context class loader so JDBC DriverManager can find the drivers
             Thread.currentThread().setContextClassLoader(classLoader);
             
-            log.info("Successfully loaded {} driver JAR(s) from: {}", jarFiles.size(), driverDir.toAbsolutePath());
+            log.info("Successfully loaded {} external library JAR(s) from: {}", jarFiles.size(), driverDir.toAbsolutePath());
             return true;
             
         } catch (Exception e) {
-            log.error("Failed to load driver JARs from: {}", driverDir.toAbsolutePath(), e);
+            log.error("Failed to load external library JARs from: {}", driverDir.toAbsolutePath(), e);
             return false;
         }
     }

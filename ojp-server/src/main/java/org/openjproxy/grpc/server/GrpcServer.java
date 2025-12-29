@@ -29,7 +29,7 @@ public class GrpcServer {
         logger.info("Loading external JDBC drivers...");
         boolean driversLoaded = DriverLoader.loadDriversFromPath(config.getDriversPath());
         if (!driversLoaded) {
-            logger.warn("Failed to load drivers from path: {}", config.getDriversPath());
+            logger.warn("Failed to load external libraries from path: {}", config.getDriversPath());
             logger.warn("Server will continue, but proprietary drivers may not be available");
         }
         

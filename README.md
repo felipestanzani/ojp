@@ -90,7 +90,7 @@ If Docker is not available in your environment, you can build and run OJP Server
 * OJP Server uses **HikariCP** connection pools to efficiently manage connections.
 * OJP supports **multiple relational databases** - in theory it can support any relational database that provides a JDBC driver implementation.
 * OJP simple setup just requires the OJP library in the classpath and the OJP prefix added to the connection URL (e.g., `jdbc:ojp[host:port]_h2:~/test` where `host:port` represents the location of the OJP server).
-* **Drop-In Driver Support**: Add proprietary JDBC drivers (Oracle, SQL Server, DB2) without recompiling - see [Drop-In Driver Documentation](documents/configuration/DRIVERS.md)
+* **Drop-In Driver Support**: Add proprietary JDBC drivers (Oracle, SQL Server, DB2) without recompiling - see [Drop-In Driver Documentation](documents/configuration/DRIVERS.md). Simply place JARs in the `ojp-libs` directory.
 
 ### Further documents
 - [Drop-In Driver Support](documents/configuration/DRIVERS.md) - Add proprietary database drivers (Oracle, SQL Server, DB2) without recompiling.

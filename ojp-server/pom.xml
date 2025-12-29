@@ -251,21 +251,21 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- Create empty drivers directory for Docker image -->
+            <!-- Create empty external libraries directory for Docker image -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
                 <version>3.1.0</version>
                 <executions>
                     <execution>
-                        <id>create-empty-drivers-dir</id>
+                        <id>create-empty-libs-dir</id>
                         <phase>prepare-package</phase>
                         <goals>
                             <goal>run</goal>
                         </goals>
                         <configuration>
                             <target>
-                                <mkdir dir="${project.build.directory}/empty-drivers"/>
+                                <mkdir dir="${project.build.directory}/empty-libs"/>
                             </target>
                         </configuration>
                     </execution>
@@ -290,14 +290,14 @@
                         </ports>
                         <jvmFlags>
                             <jvmFlag>-Dorg.slf4j.simpleLogger.defaultLogLevel=error</jvmFlag>
-                            <jvmFlag>-Dojp.drivers.path=/opt/ojp/drivers</jvmFlag>
+                            <jvmFlag>-Dojp.libs.path=/opt/ojp/ojp-libs</jvmFlag>
                         </jvmFlags>
-                        <!-- Create empty drivers directory for drop-in JDBC drivers -->
+                        <!-- Create empty external libraries directory for drop-in JDBC drivers -->
                         <extraDirectories>
                             <paths>
                                 <path>
-                                    <from>target/empty-drivers</from>
-                                    <into>/opt/ojp/drivers</into>
+                                    <from>target/empty-libs</from>
+                                    <into>/opt/ojp/ojp-libs</into>
                                 </path>
                             </paths>
                         </extraDirectories>

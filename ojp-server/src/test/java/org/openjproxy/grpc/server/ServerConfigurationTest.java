@@ -26,7 +26,7 @@ public class ServerConfigurationTest {
         System.clearProperty("ojp.server.connectionIdleTimeout");
         System.clearProperty("ojp.prometheus.allowedIps");
         System.clearProperty("ojp.server.circuitBreakerTimeout");
-        System.clearProperty("ojp.drivers.path");
+        System.clearProperty("ojp.libs.path");
     }
 
     @Test
@@ -158,8 +158,8 @@ public class ServerConfigurationTest {
         assertEquals(ServerConfiguration.DEFAULT_DRIVERS_PATH, config.getDriversPath());
 
         // Test custom value via system property
-        System.setProperty("ojp.drivers.path", "/custom/path/to/drivers");
+        System.setProperty("ojp.libs.path", "/custom/path/to/libs");
         config = new ServerConfiguration();
-        assertEquals("/custom/path/to/drivers", config.getDriversPath());
+        assertEquals("/custom/path/to/libs", config.getDriversPath());
     }
 }

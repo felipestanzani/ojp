@@ -31,36 +31,36 @@ class DriverLoaderTest {
     @Test
     void testLoadDriversFromPath_NonExistentDirectory(@TempDir Path tempDir) {
         // Should create the directory and return true
-        Path driversPath = tempDir.resolve("drivers");
-        assertFalse(Files.exists(driversPath));
+        Path libsPath = tempDir.resolve("ojp-libs");
+        assertFalse(Files.exists(libsPath));
         
-        assertTrue(DriverLoader.loadDriversFromPath(driversPath.toString()));
-        assertTrue(Files.exists(driversPath));
-        assertTrue(Files.isDirectory(driversPath));
+        assertTrue(DriverLoader.loadDriversFromPath(libsPath.toString()));
+        assertTrue(Files.exists(libsPath));
+        assertTrue(Files.isDirectory(libsPath));
     }
 
     @Test
     void testLoadDriversFromPath_ExistingEmptyDirectory(@TempDir Path tempDir) throws IOException {
         // Create an empty directory
-        Path driversPath = tempDir.resolve("drivers");
-        Files.createDirectory(driversPath);
+        Path libsPath = tempDir.resolve("ojp-libs");
+        Files.createDirectory(libsPath);
         
         // Should return true even with no JARs
-        assertTrue(DriverLoader.loadDriversFromPath(driversPath.toString()));
+        assertTrue(DriverLoader.loadDriversFromPath(libsPath.toString()));
     }
 
     @Test
     void testLoadDriversFromPath_WithJarFiles(@TempDir Path tempDir) throws IOException {
         // Create a directory with a dummy JAR file
-        Path driversPath = tempDir.resolve("drivers");
-        Files.createDirectory(driversPath);
+        Path libsPath = tempDir.resolve("ojp-libs");
+        Files.createDirectory(libsPath);
         
         // Create a simple JAR file
-        File jarFile = driversPath.resolve("dummy-driver.jar").toFile();
+        File jarFile = libsPath.resolve("dummy-driver.jar").toFile();
         createDummyJar(jarFile);
         
         // Should load the JAR successfully
-        assertTrue(DriverLoader.loadDriversFromPath(driversPath.toString()));
+        assertTrue(DriverLoader.loadDriversFromPath(libsPath.toString()));
     }
 
     @Test
@@ -76,33 +76,33 @@ class DriverLoaderTest {
     @Test
     void testLoadDriversFromPath_MultipleJars(@TempDir Path tempDir) throws IOException {
         // Create a directory with multiple JAR files
-        Path driversPath = tempDir.resolve("drivers");
-        Files.createDirectory(driversPath);
+        Path libsPath = tempDir.resolve("ojp-libs");
+        Files.createDirectory(libsPath);
         
         // Create multiple JAR files
-        createDummyJar(driversPath.resolve("driver1.jar").toFile());
-        createDummyJar(driversPath.resolve("driver2.jar").toFile());
-        createDummyJar(driversPath.resolve("driver3.jar").toFile());
+        createDummyJar(libsPath.resolve("driver1.jar").toFile());
+        createDummyJar(libsPath.resolve("driver2.jar").toFile());
+        createDummyJar(libsPath.resolve("driver3.jar").toFile());
         
         // Should load all JARs successfully
-        assertTrue(DriverLoader.loadDriversFromPath(driversPath.toString()));
+        assertTrue(DriverLoader.loadDriversFromPath(libsPath.toString()));
     }
 
     @Test
     void testLoadDriversFromPath_IgnoresNonJarFiles(@TempDir Path tempDir) throws IOException {
         // Create a directory with JAR and non-JAR files
-        Path driversPath = tempDir.resolve("drivers");
-        Files.createDirectory(driversPath);
+        Path libsPath = tempDir.resolve("ojp-libs");
+        Files.createDirectory(libsPath);
         
         // Create a JAR file
-        createDummyJar(driversPath.resolve("driver.jar").toFile());
+        createDummyJar(libsPath.resolve("driver.jar").toFile());
         
         // Create non-JAR files
-        Files.createFile(driversPath.resolve("readme.txt"));
-        Files.createFile(driversPath.resolve("config.xml"));
+        Files.createFile(libsPath.resolve("readme.txt"));
+        Files.createFile(libsPath.resolve("config.xml"));
         
         // Should load only the JAR file successfully
-        assertTrue(DriverLoader.loadDriversFromPath(driversPath.toString()));
+        assertTrue(DriverLoader.loadDriversFromPath(libsPath.toString()));
     }
 
     /**

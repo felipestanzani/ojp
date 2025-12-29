@@ -17,12 +17,12 @@ public class DriverUtils {
     
     /**
      * Register all JDBC drivers supported.
-     * @param driversPath Optional path to drivers directory for user guidance in error messages
+     * @param driversPath Optional path to external libraries directory for user guidance in error messages
      */
     public void registerDrivers(String driversPath) {
         String driverPathMessage = (driversPath != null && !driversPath.trim().isEmpty()) 
             ? driversPath 
-            : "./drivers";
+            : "./ojp-libs";
             
         //Register open source drivers
         try {
