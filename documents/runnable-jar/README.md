@@ -58,6 +58,59 @@ For example: `ojp-server/target/ojp-server-0.3.1-beta-shaded.jar`
 
 The runnable JAR size is approximately **27MB** and contains all required dependencies.
 
+## Adding Proprietary Database Drivers (Optional)
+
+The runnable JAR includes open-source JDBC drivers (H2, PostgreSQL, MySQL, MariaDB) by default. To use **proprietary databases** (Oracle, SQL Server, DB2), you need to add their JDBC drivers to the `ojp-libs` directory.
+
+### 1. Create the External Libraries Directory
+
+```bash
+mkdir ojp-libs
+```
+
+### 2. Download and Add Driver JARs
+
+Download the required JDBC driver JAR(s) from the vendor and place them in the `ojp-libs` directory:
+
+**Oracle Example:**
+```bash
+# Download ojdbc11.jar from Oracle
+cp ~/Downloads/ojdbc11.jar ojp-libs/
+
+# Optional: Add Oracle UCP for advanced connection pooling
+cp ~/Downloads/ucp.jar ojp-libs/
+cp ~/Downloads/ons.jar ojp-libs/
+```
+
+**SQL Server Example:**
+```bash
+# Download mssql-jdbc from Microsoft
+cp ~/Downloads/mssql-jdbc-12.6.1.jre11.jar ojp-libs/
+```
+
+**DB2 Example:**
+```bash
+# Download db2jcc from IBM
+cp ~/Downloads/db2jcc4.jar ojp-libs/
+```
+
+### 3. Run with External Libraries
+
+Specify the external libraries path when starting the server:
+
+```bash
+java -Dojp.libs.path=./ojp-libs -jar ojp-server/target/ojp-server-0.3.1-beta-shaded.jar
+```
+
+The server will automatically:
+- Load all JARs from the `ojp-libs` directory
+- Discover and register JDBC drivers using Java's ServiceLoader mechanism
+- Make additional libraries (like Oracle UCP) available on the classpath
+
+**Note**: The `ojp-libs` directory is optional. If not present or empty, the server will start normally with only the embedded open-source drivers.
+
+For detailed information, see the [Drop-In External Libraries Documentation](../configuration/DRIVERS_AND_LIBS.md).
+
 ## Running the OJP Server JAR
 
 ### Basic Execution
@@ -66,6 +119,14 @@ Run the OJP Server with default configuration:
 
 ```bash
 java -jar ojp-server/target/ojp-server-0.3.1-beta-shaded.jar
+```
+
+### Basic Execution with External Libraries
+
+Run the OJP Server with external libraries (for proprietary drivers):
+
+```bash
+java -Dojp.libs.path=./ojp-libs -jar ojp-server/target/ojp-server-0.3.1-beta-shaded.jar
 ```
 
 ### Expected Output
@@ -118,6 +179,7 @@ The OJP Server can be configured using system properties. Common options include
 |----------|---------|-------------|
 | `ojp.server.port` | `1059` | gRPC server port |
 | `ojp.prometheus.port` | `9159` | Prometheus metrics port |
+| `ojp.libs.path` | `./ojp-libs` | Path to external libraries directory (for proprietary drivers) |
 | `ojp.thread.pool.size` | `200` | Server thread pool size |
 | `ojp.max.request.size` | `4194304` | Maximum request size in bytes |
 | `ojp.connection.idle.timeout` | `30000` | Connection idle timeout in milliseconds |
@@ -129,6 +191,7 @@ The OJP Server can be configured using system properties. Common options include
 ```bash
 java -Dojp.server.port=8080 \
      -Dojp.prometheus.port=9091 \
+     -Dojp.libs.path=./ojp-libs \
      -Dojp.thread.pool.size=100 \
      -Dojp.max.request.size=8388608 \
      -jar ojp-server/target/ojp-server-0.3.1-beta-shaded.jar
@@ -212,12 +275,20 @@ java -Xmx2g -jar ojp-server/target/ojp-server-0.3.1-beta-shaded.jar
 
 **Problem**: Missing database drivers
 
-**Solution**: The runnable JAR includes drivers for H2, PostgreSQL, MySQL, and MariaDB. For Oracle, DB2, SQL Server or other proprietary database, you need to add the respective JDBC drivers to the classpath:
+**Solution**: The runnable JAR includes drivers for H2, PostgreSQL, MySQL, and MariaDB. For Oracle, DB2, SQL Server or other proprietary databases, use the external libraries directory:
 
+1. Create the `ojp-libs` directory
+2. Place the driver JAR(s) in the directory
+3. Start the server with `-Dojp.libs.path=./ojp-libs`
+
+Example:
 ```bash
-java -cp "oracle-driver.jar:ojp-server-0.3.1-beta-shaded.jar" \
-     org.openjproxy.grpc.server.GrpcServer
+mkdir ojp-libs
+cp ~/Downloads/ojdbc11.jar ojp-libs/
+java -Dojp.libs.path=./ojp-libs -jar ojp-server/target/ojp-server-0.3.1-beta-shaded.jar
 ```
+
+See the [Adding Proprietary Database Drivers](#adding-proprietary-database-drivers-optional) section above for detailed instructions.
 
 ### Performance Tuning
 
@@ -249,13 +320,16 @@ java -Dorg.slf4j.simpleLogger.defaultLogLevel=error \
 
 After successfully running the OJP Server:
 
-1. **Configure your application** to use the [OJP JDBC Driver](../../README.md#2-add-ojp-jdbc-driver-to-your-project)
-2. **Update connection URLs** to use the `ojp[host:port]_` prefix
-3. **Disable application-level connection pooling** as OJP handles pooling
-4. **Set up monitoring** (optional) using the Prometheus metrics endpoint
-5. **Review** [OJP Server Configuration](../configuration/ojp-server-configuration.md) for advanced options
+1. **Add proprietary drivers** (if needed) using the [external libraries directory](#adding-proprietary-database-drivers-optional)
+2. **Configure your application** to use the [OJP JDBC Driver](../../README.md#2-add-ojp-jdbc-driver-to-your-project)
+3. **Update connection URLs** to use the `ojp[host:port]_` prefix
+4. **Disable application-level connection pooling** as OJP handles pooling
+5. **Set up monitoring** (optional) using the Prometheus metrics endpoint
+6. **Review** [OJP Server Configuration](../configuration/ojp-server-configuration.md) for advanced options
 
-For framework-specific integration guides, see:
+### Additional Documentation
+
+- [Drop-In External Libraries Support](../configuration/DRIVERS_AND_LIBS.md) - Comprehensive guide for adding proprietary drivers
 - [Spring Boot Integration](../java-frameworks/spring-boot/README.md)
 - [Quarkus Integration](../java-frameworks/quarkus/README.md)
 - [Micronaut Integration](../java-frameworks/micronaut/README.md)
