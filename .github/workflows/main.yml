@@ -553,24 +553,23 @@ jobs:
           
           echo "DB2 initialization complete"
 
-      - name: Add DB2 JDBC Driver to ojp-server
+      # Download DB2 JDBC driver and place in ojp-libs directory
+      # Similar to Oracle, we handle it via drop-in mechanism
+      - name: Download DB2 JDBC Driver to ojp-libs
         run: |
-          # Create temporary file with DB2 JDBC dependency
-          cat > /tmp/db2-dep.txt << 'EOF'
-          <!-- DB2 JDBC Driver (added by CI) -->
-          <dependency>
-              <groupId>com.ibm.db2</groupId>
-              <artifactId>jcc</artifactId>
-              <version>11.5.9.0</version>
-          </dependency>
-          EOF
+          # Create ojp-libs directory
+          mkdir -p ojp-server/ojp-libs
           
-          # Insert after the placeholder comment
-          sed -i '/<!-- PROPRIETARY DATABASE DRIVERS PLACEHOLDER -->/r /tmp/db2-dep.txt' ojp-server/pom.xml
+          # Download DB2 JDBC driver from Maven Central
+          echo "=== Downloading DB2 JDBC driver ==="
+          mvn dependency:copy \
+            -Dartifact=com.ibm.db2:jcc:11.5.9.0 \
+            -DoutputDirectory=ojp-server/ojp-libs \
+            -Dmdep.stripVersion=false
           
-          # Verify the insertion
-          echo "=== Modified ojp-server/pom.xml dependencies section ==="
-          sed -n '/PROPRIETARY DATABASE DRIVERS PLACEHOLDER/,/HikariCP/p' ojp-server/pom.xml
+          # Verify the download
+          echo "=== DB2 JDBC driver downloaded to ojp-libs ==="
+          ls -lh ojp-server/ojp-libs/
 
       - name: Set up JDK 22 for build
         uses: actions/setup-java@v4
@@ -588,9 +587,9 @@ jobs:
       - name: Build (ojp-server) with JDK 22
         run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
 
-      - name: Test and Run (ojp-server)
+      - name: Test and Run (ojp-server) with DB2 driver from ojp-libs
         run: |
-          nohup java -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
+          nohup java -Dojp.libs.path=ojp-server/ojp-libs -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
           echo $! > /tmp/ojp-server.pid
 
       - name: Wait for ojp-server to start
@@ -1587,26 +1586,24 @@ jobs:
           
           echo "=== XA permissions granted successfully ==="
 
-      # Dynamically add Oracle JDBC driver to ojp-server
+      # Download Oracle JDBC driver and place in ojp-libs directory
       # We don't include it in the repository due to Oracle licensing
-      - name: Add Oracle JDBC Driver to ojp-server
+      # The driver will be loaded at runtime via the drop-in mechanism
+      - name: Download Oracle JDBC Driver to ojp-libs
         run: |
-          # Create temporary file with Oracle JDBC dependency
-          cat > /tmp/oracle-dep.txt << 'EOF'
-          <!-- Oracle JDBC Driver (added by CI) -->
-          <dependency>
-              <groupId>com.oracle.database.jdbc</groupId>
-              <artifactId>ojdbc11</artifactId>
-              <version>23.8.0.25.04</version>
-          </dependency>
-          EOF
+          # Create ojp-libs directory
+          mkdir -p ojp-server/ojp-libs
           
-          # Insert after the placeholder comment
-          sed -i '/<!-- PROPRIETARY DATABASE DRIVERS PLACEHOLDER -->/r /tmp/oracle-dep.txt' ojp-server/pom.xml
+          # Download Oracle JDBC driver from Maven Central
+          echo "=== Downloading Oracle JDBC driver ==="
+          mvn dependency:copy \
+            -Dartifact=com.oracle.database.jdbc:ojdbc11:23.8.0.25.04 \
+            -DoutputDirectory=ojp-server/ojp-libs \
+            -Dmdep.stripVersion=false
           
-          # Verify the insertion
-          echo "=== Modified ojp-server/pom.xml dependencies section ==="
-          sed -n '/PROPRIETARY DATABASE DRIVERS PLACEHOLDER/,/HikariCP/p' ojp-server/pom.xml
+          # Verify the download
+          echo "=== Oracle JDBC driver downloaded to ojp-libs ==="
+          ls -lh ojp-server/ojp-libs/
 
       - name: Set up JDK 22 for build
         uses: actions/setup-java@v4
@@ -1621,12 +1618,12 @@ jobs:
       - name: Test (ojp-grpc-commons) with JDK 22
         run: mvn test -pl ojp-grpc-commons -Dgpg.skip=true
 
-      - name: Build (ojp-server) with JDK 22
+       - name: Build (ojp-server) with JDK 22
         run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
 
-      - name: Test and Run (ojp-server)
+      - name: Test and Run (ojp-server) with Oracle driver from ojp-libs
         run: |
-          nohup java -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
+          nohup java -Dojp.libs.path=ojp-server/ojp-libs -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
           echo $! > /tmp/ojp-server.pid
 
       - name: Wait for ojp-server to start
@@ -1684,26 +1681,23 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Dynamically add SQL Server JDBC driver to ojp-server
-      # Similar to Oracle, we add it during CI rather than including in repo
-      - name: Add SQL Server JDBC Driver to ojp-server
+      # Download SQL Server JDBC driver and place in ojp-libs directory
+      # Similar to Oracle and DB2, we handle it via drop-in mechanism
+      - name: Download SQL Server JDBC Driver to ojp-libs
         run: |
-          # Create temporary file with SQL Server JDBC dependency
-          cat > /tmp/sqlserver-dep.txt << 'EOF'
-          <!-- SQL Server JDBC Driver (added by CI) -->
-          <dependency>
-              <groupId>com.microsoft.sqlserver</groupId>
-              <artifactId>mssql-jdbc</artifactId>
-              <version>12.8.2.jre11</version>
-          </dependency>
-          EOF
+          # Create ojp-libs directory
+          mkdir -p ojp-server/ojp-libs
           
-          # Insert after the placeholder comment
-          sed -i '/<!-- PROPRIETARY DATABASE DRIVERS PLACEHOLDER -->/r /tmp/sqlserver-dep.txt' ojp-server/pom.xml
+          # Download SQL Server JDBC driver from Maven Central
+          echo "=== Downloading SQL Server JDBC driver ==="
+          mvn dependency:copy \
+            -Dartifact=com.microsoft.sqlserver:mssql-jdbc:12.8.2.jre11 \
+            -DoutputDirectory=ojp-server/ojp-libs \
+            -Dmdep.stripVersion=false
           
-          # Verify the insertion
-          echo "=== Modified ojp-server/pom.xml dependencies section ==="
-          sed -n '/PROPRIETARY DATABASE DRIVERS PLACEHOLDER/,/HikariCP/p' ojp-server/pom.xml
+          # Verify the download
+          echo "=== SQL Server JDBC driver downloaded to ojp-libs ==="
+          ls -lh ojp-server/ojp-libs/
 
       - name: Set up JDK 22 for build
         uses: actions/setup-java@v4
@@ -1721,9 +1715,9 @@ jobs:
       - name: Build (ojp-server) with JDK 22
         run: mvn clean install -pl ojp-server -am -DskipTests -Dgpg.skip=true
 
-      - name: Test and Run (ojp-server)
+      - name: Test and Run (ojp-server) with SQL Server driver from ojp-libs
         run: |
-          nohup java -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
+          nohup java -Dojp.libs.path=ojp-server/ojp-libs -jar ojp-server/target/ojp-server-0.3.2-snapshot-shaded.jar > /tmp/ojp-server.log 2>&1 &
           echo $! > /tmp/ojp-server.pid
 
       - name: Wait for ojp-server to start
