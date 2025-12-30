@@ -110,11 +110,19 @@ public class DriverLoader {
      * This is necessary because DriverManager only accepts drivers loaded by the system class loader
      * or its parent. This shim delegates all calls to the actual driver.
      */
-    private static class DriverShim implements Driver {
+    static class DriverShim implements Driver {
         private final Driver driver;
         
         DriverShim(Driver driver) {
             this.driver = driver;
+        }
+        
+        /**
+         * Get the class name of the wrapped driver.
+         * This is useful for checking which driver is actually loaded.
+         */
+        public String getWrappedDriverClassName() {
+            return driver.getClass().getName();
         }
         
         @Override

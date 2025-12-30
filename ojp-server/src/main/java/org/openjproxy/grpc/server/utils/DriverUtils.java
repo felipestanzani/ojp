@@ -3,7 +3,9 @@ package org.openjproxy.grpc.server.utils;
 import lombok.experimental.UtilityClass;
 import lombok.extern.slf4j.Slf4j;
 
+import java.sql.Driver;
 import java.sql.DriverManager;
+import java.util.Enumeration;
 
 import static org.openjproxy.grpc.server.Constants.H2_DRIVER_CLASS;
 import static org.openjproxy.grpc.server.Constants.MARIADB_DRIVER_CLASS;
@@ -18,7 +20,7 @@ import static org.openjproxy.grpc.server.Constants.DB2_DRIVER_CLASS;
 public class DriverUtils {
     
     /**
-     * Check if a driver is available and report status.
+     * Register all JDBC drivers supported and report their availability status.
      * This checks if the driver can be loaded via Class.forName() OR if it's registered with DriverManager.
      * @param driversPath Optional path to external libraries directory for user guidance in error messages
      */
@@ -28,28 +30,30 @@ public class DriverUtils {
             : "./ojp-libs";
             
         //Check open source drivers
-        checkDriver(H2_DRIVER_CLASS, "H2", "jdbc:h2:", 
+        checkDriver(H2_DRIVER_CLASS, "H2", 
             "https://mvnrepository.com/artifact/com.h2database/h2", "h2-*.jar", driverPathMessage);
-        checkDriver(POSTGRES_DRIVER_CLASS, "PostgreSQL", "jdbc:postgresql:", 
+        checkDriver(POSTGRES_DRIVER_CLASS, "PostgreSQL", 
             "https://mvnrepository.com/artifact/org.postgresql/postgresql", "postgresql-*.jar", driverPathMessage);
-        checkDriver(MYSQL_DRIVER_CLASS, "MySQL", "jdbc:mysql:", 
+        checkDriver(MYSQL_DRIVER_CLASS, "MySQL", 
             "https://mvnrepository.com/artifact/com.mysql/mysql-connector-j", "mysql-connector-j-*.jar", driverPathMessage);
-        checkDriver(MARIADB_DRIVER_CLASS, "MariaDB", "jdbc:mariadb:", 
+        checkDriver(MARIADB_DRIVER_CLASS, "MariaDB", 
             "https://mvnrepository.com/artifact/org.mariadb.jdbc/mariadb-java-client", "mariadb-java-client-*.jar", driverPathMessage);
             
         //Check proprietary drivers (if present)
-        checkDriver(ORACLE_DRIVER_CLASS, "Oracle", "jdbc:oracle:", 
+        checkDriver(ORACLE_DRIVER_CLASS, "Oracle", 
             "https://www.oracle.com/database/technologies/jdbc-downloads.html", "ojdbc*.jar", driverPathMessage);
-        checkDriver(SQLSERVER_DRIVER_CLASS, "SQL Server", "jdbc:sqlserver:", 
+        checkDriver(SQLSERVER_DRIVER_CLASS, "SQL Server", 
             "https://learn.microsoft.com/en-us/sql/connect/jdbc/download-microsoft-jdbc-driver-for-sql-server", "mssql-jdbc-*.jar", driverPathMessage);
-        checkDriver(DB2_DRIVER_CLASS, "DB2", "jdbc:db2:", 
+        checkDriver(DB2_DRIVER_CLASS, "DB2", 
             "IBM website", "db2jcc*.jar", driverPathMessage);
     }
     
     /**
      * Check if a driver is available either via Class.forName() or DriverManager.
+     * This method checks both the main classpath and drivers registered with DriverManager
+     * (which includes drivers loaded via URLClassLoader and wrapped in DriverShim).
      */
-    private void checkDriver(String driverClass, String driverName, String jdbcPrefix, 
+    private void checkDriver(String driverClass, String driverName, 
                             String downloadUrl, String jarName, String driverPath) {
         boolean found = false;
         
@@ -59,12 +63,23 @@ public class DriverUtils {
             found = true;
         } catch (ClassNotFoundException e) {
             // Driver not in main classpath, check if it's registered with DriverManager
-            try {
-                // Try to get a driver for a sample URL with this prefix
-                DriverManager.getDriver(jdbcPrefix + "//localhost/test");
-                found = true;
-            } catch (Exception ex) {
-                // Driver not registered with DriverManager either
+            // by iterating through all registered drivers and checking their class name.
+            // Note: Drivers loaded via DriverLoader are wrapped in DriverShim.
+            Enumeration<Driver> drivers = DriverManager.getDrivers();
+            while (drivers.hasMoreElements() && !found) {
+                Driver driver = drivers.nextElement();
+                // Check if this is our target driver or a DriverShim wrapping it
+                if (driver.getClass().getName().equals(driverClass)) {
+                    found = true;
+                    break;
+                } else if (driver instanceof org.openjproxy.grpc.server.utils.DriverLoader.DriverShim) {
+                    org.openjproxy.grpc.server.utils.DriverLoader.DriverShim shim = 
+                        (org.openjproxy.grpc.server.utils.DriverLoader.DriverShim) driver;
+                    if (shim.getWrappedDriverClassName().equals(driverClass)) {
+                        found = true;
+                        break;
+                    }
+                }
             }
         }
         
