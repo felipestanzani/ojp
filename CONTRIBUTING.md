@@ -88,6 +88,18 @@ For more details on recognition for these contributions, see our [Contributor Re
    git merge upstream/main
    ```
 
+### Download JDBC Drivers
+
+OJP requires JDBC drivers to connect to databases. Open source drivers (H2, PostgreSQL, MySQL, MariaDB) are not embedded in the JAR and must be downloaded:
+
+```bash
+cd ojp-server
+bash download-drivers.sh
+cd ..
+```
+
+This script downloads the drivers from Maven Central to `./ojp-libs/` at the repository root. For proprietary drivers (Oracle, DB2, SQL Server), see the specific database testing guides in `documents/environment-setup/`.
+
 ### Build the Project
 
 Build the project to ensure everything is set up correctly:
@@ -122,6 +134,13 @@ git checkout -b docs/improve-setup-guide
 ### 3. Test Your Changes
 
 Before submitting a pull request, ensure your changes work correctly:
+
+**Download drivers** (if not already done):
+```bash
+cd ojp-server
+bash download-drivers.sh
+cd ..
+```
 
 **Start the OJP server** (required for running tests):
 ```bash
