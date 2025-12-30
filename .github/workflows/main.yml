@@ -577,19 +577,19 @@ jobs:
       # Similar to Oracle, we handle it via drop-in mechanism
       - name: Download DB2 JDBC Driver to ojp-libs
         run: |
-          # Create ojp-libs directory
-          mkdir -p ojp-server/ojp-libs
+          # Create ojp-libs directory at repository root
+          mkdir -p ojp-libs
           
           # Download DB2 JDBC driver from Maven Central
           echo "=== Downloading DB2 JDBC driver ==="
           mvn dependency:copy \
             -Dartifact=com.ibm.db2:jcc:11.5.9.0 \
-            -DoutputDirectory=ojp-server/ojp-libs \
+            -DoutputDirectory=ojp-libs \
             -Dmdep.stripVersion=false
           
           # Verify the download
           echo "=== DB2 JDBC driver downloaded to ojp-libs ==="
-          ls -lh ojp-server/ojp-libs/
+          ls -lh ojp-libs/
 
       - name: Set up JDK 22 for build
         uses: actions/setup-java@v4
@@ -1624,19 +1624,19 @@ jobs:
       # The driver will be loaded at runtime via the drop-in mechanism
       - name: Download Oracle JDBC Driver to ojp-libs
         run: |
-          # Create ojp-libs directory
-          mkdir -p ojp-server/ojp-libs
+          # Create ojp-libs directory at repository root
+          mkdir -p ojp-libs
           
           # Download Oracle JDBC driver from Maven Central
           echo "=== Downloading Oracle JDBC driver ==="
           mvn dependency:copy \
             -Dartifact=com.oracle.database.jdbc:ojdbc11:23.8.0.25.04 \
-            -DoutputDirectory=ojp-server/ojp-libs \
+            -DoutputDirectory=ojp-libs \
             -Dmdep.stripVersion=false
           
           # Verify the download
           echo "=== Oracle JDBC driver downloaded to ojp-libs ==="
-          ls -lh ojp-server/ojp-libs/
+          ls -lh ojp-libs/
 
       - name: Set up JDK 22 for build
         uses: actions/setup-java@v4
@@ -1722,19 +1722,19 @@ jobs:
       # Similar to Oracle and DB2, we handle it via drop-in mechanism
       - name: Download SQL Server JDBC Driver to ojp-libs
         run: |
-          # Create ojp-libs directory
-          mkdir -p ojp-server/ojp-libs
+          # Create ojp-libs directory at repository root
+          mkdir -p ojp-libs
           
           # Download SQL Server JDBC driver from Maven Central
           echo "=== Downloading SQL Server JDBC driver ==="
           mvn dependency:copy \
             -Dartifact=com.microsoft.sqlserver:mssql-jdbc:12.8.2.jre11 \
-            -DoutputDirectory=ojp-server/ojp-libs \
+            -DoutputDirectory=ojp-libs \
             -Dmdep.stripVersion=false
           
           # Verify the download
           echo "=== SQL Server JDBC driver downloaded to ojp-libs ==="
-          ls -lh ojp-server/ojp-libs/
+          ls -lh ojp-libs/
 
       - name: Set up JDK 22 for build
         uses: actions/setup-java@v4
