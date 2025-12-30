@@ -9,8 +9,11 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.sql.Driver;
+import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.ServiceLoader;
 
 /**
  * Utility class for loading JDBC drivers from a configurable directory at runtime.
@@ -83,12 +86,76 @@ public class DriverLoader {
             // Set the context class loader so JDBC DriverManager can find the drivers
             Thread.currentThread().setContextClassLoader(classLoader);
             
-            log.info("Successfully loaded {} external library JAR(s) from: {}", jarFiles.size(), driverDir.toAbsolutePath());
+            // Use ServiceLoader to discover and register JDBC drivers from the loaded JARs
+            // This is the standard JDBC 4.0+ mechanism for driver auto-registration
+            ServiceLoader<Driver> driverLoader = ServiceLoader.load(Driver.class, classLoader);
+            int registeredCount = 0;
+            for (Driver driver : driverLoader) {
+                try {
+                    // Explicitly register the driver with DriverManager
+                    DriverManager.registerDriver(new DriverShim(driver));
+                    log.info("Registered JDBC driver: {}", driver.getClass().getName());
+                    registeredCount++;
+                } catch (Exception e) {
+                    log.warn("Failed to register JDBC driver: {}", driver.getClass().getName(), e);
+                }
+            }
+            
+            log.info("Successfully loaded {} external library JAR(s) and registered {} JDBC driver(s) from: {}", 
+                     jarFiles.size(), registeredCount, driverDir.toAbsolutePath());
             return true;
             
         } catch (Exception e) {
             log.error("Failed to load external library JARs from: {}", driverDir.toAbsolutePath(), e);
             return false;
+        }
+    }
+    
+    /**
+     * Wrapper class for JDBC drivers loaded from external class loaders.
+     * This is necessary because DriverManager only accepts drivers loaded by the system class loader
+     * or its parent. This shim delegates all calls to the actual driver.
+     */
+    private static class DriverShim implements Driver {
+        private final Driver driver;
+        
+        DriverShim(Driver driver) {
+            this.driver = driver;
+        }
+        
+        @Override
+        public java.sql.Connection connect(String url, java.util.Properties info) throws java.sql.SQLException {
+            return driver.connect(url, info);
+        }
+        
+        @Override
+        public boolean acceptsURL(String url) throws java.sql.SQLException {
+            return driver.acceptsURL(url);
+        }
+        
+        @Override
+        public java.sql.DriverPropertyInfo[] getPropertyInfo(String url, java.util.Properties info) throws java.sql.SQLException {
+            return driver.getPropertyInfo(url, info);
+        }
+        
+        @Override
+        public int getMajorVersion() {
+            return driver.getMajorVersion();
+        }
+        
+        @Override
+        public int getMinorVersion() {
+            return driver.getMinorVersion();
+        }
+        
+        @Override
+        public boolean jdbcCompliant() {
+            return driver.jdbcCompliant();
+        }
+        
+        @Override
+        public java.util.logging.Logger getParentLogger() throws java.sql.SQLFeatureNotSupportedException {
+            return driver.getParentLogger();
         }
     }
 }
