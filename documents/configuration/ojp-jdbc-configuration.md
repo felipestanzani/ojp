@@ -151,6 +151,29 @@ ojp.connection.pool.enabled=false
 myApp.ojp.connection.pool.enabled=false
 ```
 
+**Configuration Precedence:**
+
+Properties can be specified in three ways, with the following precedence (highest to lowest):
+
+1. **Environment Variables** (highest priority)
+   ```bash
+   # Disable pooling via environment variable
+   export MYAPP_OJP_CONNECTION_POOL_ENABLED=false
+   export OJP_CONNECTION_POOL_ENABLED=false  # for default datasource
+   ```
+
+2. **System Properties** (via `-D` flags)
+   ```bash
+   # Disable pooling via system property
+   java -Dmyapp.ojp.connection.pool.enabled=false -jar app.jar
+   mvn test -Dmultinode.ojp.connection.pool.enabled=false
+   ```
+
+3. **Properties File** (`ojp.properties` - lowest priority)
+   ```properties
+   myapp.ojp.connection.pool.enabled=false
+   ```
+
 **Behavior when disabled:**
 - Connections created directly via `DriverManager.getConnection()`
 - No connection reuse - new connection per request
@@ -180,6 +203,29 @@ ojp.xa.connection.pool.enabled=false
 # Disable XA pooling for specific datasource
 myApp.ojp.xa.connection.pool.enabled=false
 ```
+
+**Configuration Precedence:**
+
+Properties can be specified in three ways, with the following precedence (highest to lowest):
+
+1. **Environment Variables** (highest priority)
+   ```bash
+   # Disable XA pooling via environment variable
+   export MYAPP_OJP_XA_CONNECTION_POOL_ENABLED=false
+   export OJP_XA_CONNECTION_POOL_ENABLED=false  # for default datasource
+   ```
+
+2. **System Properties** (via `-D` flags)
+   ```bash
+   # Disable XA pooling via system property
+   java -Dmyapp.ojp.xa.connection.pool.enabled=false -jar app.jar
+   mvn test -Dmultinode.ojp.xa.connection.pool.enabled=false
+   ```
+
+3. **Properties File** (`ojp.properties` - lowest priority)
+   ```properties
+   myapp.ojp.xa.connection.pool.enabled=false
+   ```
 
 **Behavior when disabled:**
 - XADataSource created directly without pooling
