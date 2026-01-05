@@ -380,8 +380,11 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                                 connHash, serverEndpoints.size(), maxPoolSize, minIdle);
                     }
                     
+                    // Check if transaction isolation is configured in properties
+                    Integer configuredTransactionIsolation = dsConfig.getDefaultTransactionIsolation();
+                    Integer defaultTransactionIsolation = configuredTransactionIsolation;
+                    
                     // Build initial PoolConfig from connection details and configuration
-                    // We'll detect the default transaction isolation level after creating the pool
                     PoolConfig poolConfig = PoolConfig.builder()
                             .url(UrlParser.parseUrl(connectionDetails.getUrl()))
                             .username(connectionDetails.getUser())
@@ -394,28 +397,57 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                             .metricsPrefix("OJP-Pool-" + dsConfig.getDataSourceName())
                             .build();
                     
-                    // Create DataSource using the SPI (HikariCP by default)
-                    ds = ConnectionPoolProviderRegistry.createDataSource(poolConfig);
-                    String providerId = ConnectionPoolProviderRegistry.getDefaultProvider()
-                            .map(ConnectionPoolProvider::id)
-                            .orElse("hikari");
-                    
-                    // Detect default transaction isolation level from the database
-                    // and reconfigure the pool to reset connections to this level.
-                    // 
-                    // NOTE: We create the datasource twice here because we face a chicken-and-egg problem:
-                    // - We need a connection to detect the default transaction isolation level
-                    // - But we need the isolation level to properly configure the connection pool
-                    // This double-creation only happens once during datasource initialization,
-                    // and the overhead is minimal (typically < 100ms) compared to the benefit
-                    // of preventing connection state pollution throughout the application lifetime.
-                    try (Connection testConn = ds.getConnection()) {
-                        int defaultTransactionIsolation = testConn.getTransactionIsolation();
-                        log.info("Detected default transaction isolation level for {}: {}", 
-                                connHash, defaultTransactionIsolation);
+                    // If transaction isolation is not configured, we need to detect it from the database
+                    if (configuredTransactionIsolation == null) {
+                        // Create DataSource using the SPI (HikariCP by default) to detect isolation level
+                        ds = ConnectionPoolProviderRegistry.createDataSource(poolConfig);
+                        String providerId = ConnectionPoolProviderRegistry.getDefaultProvider()
+                                .map(ConnectionPoolProvider::id)
+                                .orElse("hikari");
                         
-                        // Close and recreate the datasource with proper transaction isolation configuration
-                        ConnectionPoolProviderRegistry.closeDataSource(providerId, ds);
+                        // Detect default transaction isolation level from the database
+                        // and reconfigure the pool to reset connections to this level.
+                        // 
+                        // NOTE: We create the datasource twice here because we face a chicken-and-egg problem:
+                        // - We need a connection to detect the default transaction isolation level
+                        // - But we need the isolation level to properly configure the connection pool
+                        // This double-creation only happens once during datasource initialization,
+                        // and the overhead is minimal (typically < 100ms) compared to the benefit
+                        // of preventing connection state pollution throughout the application lifetime.
+                        try (Connection testConn = ds.getConnection()) {
+                            defaultTransactionIsolation = testConn.getTransactionIsolation();
+                            log.info("Auto-detected default transaction isolation level for {}: {}", 
+                                    connHash, defaultTransactionIsolation);
+                            
+                            // Close and recreate the datasource with proper transaction isolation configuration
+                            ConnectionPoolProviderRegistry.closeDataSource(providerId, ds);
+                            
+                            poolConfig = PoolConfig.builder()
+                                    .url(UrlParser.parseUrl(connectionDetails.getUrl()))
+                                    .username(connectionDetails.getUser())
+                                    .password(connectionDetails.getPassword())
+                                    .maxPoolSize(maxPoolSize)
+                                    .minIdle(minIdle)
+                                    .connectionTimeoutMs(dsConfig.getConnectionTimeout())
+                                    .idleTimeoutMs(dsConfig.getIdleTimeout())
+                                    .maxLifetimeMs(dsConfig.getMaxLifetime())
+                                    .defaultTransactionIsolation(defaultTransactionIsolation)
+                                    .metricsPrefix("OJP-Pool-" + dsConfig.getDataSourceName())
+                                    .build();
+                            
+                            ds = ConnectionPoolProviderRegistry.createDataSource(poolConfig);
+                            log.info("Recreated DataSource with transaction isolation reset configured");
+                        } catch (SQLException e) {
+                            log.warn("Failed to detect and configure default transaction isolation level for {}: {}. " +
+                                    "Connection state may not be properly reset between sessions.", connHash, e.getMessage());
+                        } catch (Exception e) {
+                            log.error("Failed to reconfigure DataSource with transaction isolation: {}", e.getMessage(), e);
+                            // Continue with the originally created datasource
+                        }
+                    } else {
+                        // Transaction isolation is configured - use it directly
+                        log.info("Using configured transaction isolation level for {}: {}", 
+                                connHash, configuredTransactionIsolation);
                         
                         poolConfig = PoolConfig.builder()
                                 .url(UrlParser.parseUrl(connectionDetails.getUrl()))
@@ -426,18 +458,12 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                                 .connectionTimeoutMs(dsConfig.getConnectionTimeout())
                                 .idleTimeoutMs(dsConfig.getIdleTimeout())
                                 .maxLifetimeMs(dsConfig.getMaxLifetime())
-                                .defaultTransactionIsolation(defaultTransactionIsolation)
+                                .defaultTransactionIsolation(configuredTransactionIsolation)
                                 .metricsPrefix("OJP-Pool-" + dsConfig.getDataSourceName())
                                 .build();
                         
                         ds = ConnectionPoolProviderRegistry.createDataSource(poolConfig);
-                        log.info("Recreated DataSource with transaction isolation reset configured");
-                    } catch (SQLException e) {
-                        log.warn("Failed to detect and configure default transaction isolation level for {}: {}. " +
-                                "Connection state may not be properly reset between sessions.", connHash, e.getMessage());
-                    } catch (Exception e) {
-                        log.error("Failed to reconfigure DataSource with transaction isolation: {}", e.getMessage(), e);
-                        // Continue with the originally created datasource
+                        log.info("Created DataSource with configured transaction isolation level");
                     }
                     
                     this.datasourceMap.put(connHash, ds);

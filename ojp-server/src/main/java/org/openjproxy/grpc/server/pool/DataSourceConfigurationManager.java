@@ -30,6 +30,7 @@ public class DataSourceConfigurationManager {
         private final long maxLifetime;
         private final long connectionTimeout;
         private final boolean poolEnabled;
+        private final Integer defaultTransactionIsolation;
         
         public DataSourceConfiguration(String dataSourceName, Properties properties) {
             this.dataSourceName = dataSourceName;
@@ -39,6 +40,7 @@ public class DataSourceConfigurationManager {
             this.maxLifetime = getLongProperty(properties, CommonConstants.MAX_LIFETIME_PROPERTY, CommonConstants.DEFAULT_MAX_LIFETIME);
             this.connectionTimeout = getLongProperty(properties, CommonConstants.CONNECTION_TIMEOUT_PROPERTY, CommonConstants.DEFAULT_CONNECTION_TIMEOUT);
             this.poolEnabled = getBooleanProperty(properties, CommonConstants.POOL_ENABLED_PROPERTY, true);
+            this.defaultTransactionIsolation = getTransactionIsolationProperty(properties, CommonConstants.DEFAULT_TRANSACTION_ISOLATION_PROPERTY);
         }
         
         // Getters
@@ -49,11 +51,13 @@ public class DataSourceConfigurationManager {
         public long getMaxLifetime() { return maxLifetime; }
         public long getConnectionTimeout() { return connectionTimeout; }
         public boolean isPoolEnabled() { return poolEnabled; }
+        public Integer getDefaultTransactionIsolation() { return defaultTransactionIsolation; }
         
         @Override
         public String toString() {
-            return String.format("DataSourceConfiguration[%s: maxPool=%d, minIdle=%d, timeout=%d, poolEnabled=%b]", 
-                    dataSourceName, maximumPoolSize, minimumIdle, connectionTimeout, poolEnabled);
+            return String.format("DataSourceConfiguration[%s: maxPool=%d, minIdle=%d, timeout=%d, poolEnabled=%b, txIsolation=%s]", 
+                    dataSourceName, maximumPoolSize, minimumIdle, connectionTimeout, poolEnabled, 
+                    defaultTransactionIsolation != null ? defaultTransactionIsolation : "auto-detect");
         }
     }
     
@@ -71,6 +75,7 @@ public class DataSourceConfigurationManager {
         private final long timeBetweenEvictionRuns;
         private final int numTestsPerEvictionRun;
         private final long softMinEvictableIdleTime;
+        private final Integer defaultTransactionIsolation;
         
         public XADataSourceConfiguration(String dataSourceName, Properties properties) {
             this.dataSourceName = dataSourceName;
@@ -94,6 +99,8 @@ public class DataSourceConfigurationManager {
                     CommonConstants.DEFAULT_XA_NUM_TESTS_PER_EVICTION_RUN);
             this.softMinEvictableIdleTime = getLongProperty(properties, CommonConstants.XA_SOFT_MIN_EVICTABLE_IDLE_TIME_PROPERTY,
                     CommonConstants.DEFAULT_XA_SOFT_MIN_EVICTABLE_IDLE_TIME_MS);
+            
+            this.defaultTransactionIsolation = getTransactionIsolationProperty(properties, CommonConstants.XA_DEFAULT_TRANSACTION_ISOLATION_PROPERTY);
         }
         
         // Getters
@@ -107,12 +114,14 @@ public class DataSourceConfigurationManager {
         public long getTimeBetweenEvictionRuns() { return timeBetweenEvictionRuns; }
         public int getNumTestsPerEvictionRun() { return numTestsPerEvictionRun; }
         public long getSoftMinEvictableIdleTime() { return softMinEvictableIdleTime; }
+        public Integer getDefaultTransactionIsolation() { return defaultTransactionIsolation; }
         
         @Override
         public String toString() {
-            return String.format("XADataSourceConfiguration[%s: maxPool=%d, minIdle=%d, timeout=%d, poolEnabled=%b, evictionRuns=%d, testsPerRun=%d, softMinEvictable=%d]", 
+            return String.format("XADataSourceConfiguration[%s: maxPool=%d, minIdle=%d, timeout=%d, poolEnabled=%b, evictionRuns=%d, testsPerRun=%d, softMinEvictable=%d, txIsolation=%s]", 
                     dataSourceName, maximumPoolSize, minimumIdle, connectionTimeout, poolEnabled, 
-                    timeBetweenEvictionRuns, numTestsPerEvictionRun, softMinEvictableIdleTime);
+                    timeBetweenEvictionRuns, numTestsPerEvictionRun, softMinEvictableIdleTime,
+                    defaultTransactionIsolation != null ? defaultTransactionIsolation : "auto-detect");
         }
     }
     
@@ -185,7 +194,8 @@ public class DataSourceConfigurationManager {
                     CommonConstants.XA_POOL_ENABLED_PROPERTY,
                     CommonConstants.XA_TIME_BETWEEN_EVICTION_RUNS_PROPERTY,
                     CommonConstants.XA_NUM_TESTS_PER_EVICTION_RUN_PROPERTY,
-                    CommonConstants.XA_SOFT_MIN_EVICTABLE_IDLE_TIME_PROPERTY
+                    CommonConstants.XA_SOFT_MIN_EVICTABLE_IDLE_TIME_PROPERTY,
+                    CommonConstants.XA_DEFAULT_TRANSACTION_ISOLATION_PROPERTY
             };
         } else {
             keys = new String[] {
@@ -194,7 +204,8 @@ public class DataSourceConfigurationManager {
                     CommonConstants.IDLE_TIMEOUT_PROPERTY,
                     CommonConstants.MAX_LIFETIME_PROPERTY,
                     CommonConstants.CONNECTION_TIMEOUT_PROPERTY,
-                    CommonConstants.POOL_ENABLED_PROPERTY
+                    CommonConstants.POOL_ENABLED_PROPERTY,
+                    CommonConstants.DEFAULT_TRANSACTION_ISOLATION_PROPERTY
             };
         }
         
@@ -248,6 +259,58 @@ public class DataSourceConfigurationManager {
             return Boolean.parseBoolean(value);
         }
         return defaultValue;
+    }
+    
+    /**
+     * Gets a transaction isolation level property. Accepts both integer values and string names.
+     * Returns null if not specified, allowing auto-detection from database.
+     * 
+     * @param properties The properties object
+     * @param key The property key
+     * @return The transaction isolation level constant, or null if not specified
+     */
+    private static Integer getTransactionIsolationProperty(Properties properties, String key) {
+        if (properties == null || !properties.containsKey(key)) {
+            return null;
+        }
+        
+        String value = properties.getProperty(key);
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        
+        value = value.trim();
+        
+        // Try to parse as integer first
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            // Not an integer, try to parse as string name
+        }
+        
+        // Parse string names (case-insensitive)
+        switch (value.toUpperCase()) {
+            case "TRANSACTION_NONE":
+            case "NONE":
+                return java.sql.Connection.TRANSACTION_NONE;
+            case "TRANSACTION_READ_UNCOMMITTED":
+            case "READ_UNCOMMITTED":
+                return java.sql.Connection.TRANSACTION_READ_UNCOMMITTED;
+            case "TRANSACTION_READ_COMMITTED":
+            case "READ_COMMITTED":
+                return java.sql.Connection.TRANSACTION_READ_COMMITTED;
+            case "TRANSACTION_REPEATABLE_READ":
+            case "REPEATABLE_READ":
+                return java.sql.Connection.TRANSACTION_REPEATABLE_READ;
+            case "TRANSACTION_SERIALIZABLE":
+            case "SERIALIZABLE":
+                return java.sql.Connection.TRANSACTION_SERIALIZABLE;
+            default:
+                log.warn("Invalid transaction isolation value for property '{}': {}. " +
+                        "Valid values are: NONE, READ_UNCOMMITTED, READ_COMMITTED, REPEATABLE_READ, SERIALIZABLE, " +
+                        "or numeric values 0, 1, 2, 4, 8. Auto-detection will be used.", key, value);
+                return null;
+        }
     }
     
     /**

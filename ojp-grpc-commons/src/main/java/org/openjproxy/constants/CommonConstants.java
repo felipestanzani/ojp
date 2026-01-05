@@ -49,6 +49,10 @@ public class CommonConstants {
     // Multinode configuration property keys
     public static final String MULTINODE_RETRY_ATTEMPTS_PROPERTY = "ojp.multinode.retryAttempts";
     public static final String MULTINODE_RETRY_DELAY_PROPERTY = "ojp.multinode.retryDelayMs";
+    
+    // Transaction isolation configuration property key
+    public static final String DEFAULT_TRANSACTION_ISOLATION_PROPERTY = "ojp.connection.pool.defaultTransactionIsolation";
+    public static final String XA_DEFAULT_TRANSACTION_ISOLATION_PROPERTY = "ojp.xa.connection.pool.defaultTransactionIsolation";
 
     // HikariCP default connection pool settings - optimized for high concurrency
     // ISSUE #29 FIX: Updated these values to prevent indefinite blocking under high load
