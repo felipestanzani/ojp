@@ -67,7 +67,35 @@ batchJob.ojp.connection.pool.minimumIdle=1
 | `ojp.connection.pool.connectionTimeout` | Connection timeout (ms) | 10000 |
 | `ojp.connection.pool.idleTimeout` | Idle timeout (ms) | 600000 |
 | `ojp.connection.pool.maxLifetime` | Max connection lifetime (ms) | 1800000 |
+| `ojp.connection.pool.defaultTransactionIsolation` | Default transaction isolation level | auto-detect |
 | `ojp.datasource.name` | Logical datasource name | default |
+
+### Transaction Isolation Configuration
+
+The `defaultTransactionIsolation` property configures how connections are reset when returned to the pool:
+
+```properties
+# Auto-detect from database (default behavior)
+# No configuration needed
+
+# Explicit configuration (string names - recommended)
+ojp.connection.pool.defaultTransactionIsolation=READ_COMMITTED
+ojp.connection.pool.defaultTransactionIsolation=SERIALIZABLE
+
+# Using JDBC constant names
+ojp.connection.pool.defaultTransactionIsolation=TRANSACTION_READ_COMMITTED
+
+# Using numeric values (0=NONE, 1=READ_UNCOMMITTED, 2=READ_COMMITTED, 4=REPEATABLE_READ, 8=SERIALIZABLE)
+ojp.connection.pool.defaultTransactionIsolation=2
+
+# For XA connections
+ojp.xa.connection.pool.defaultTransactionIsolation=SERIALIZABLE
+```
+
+**Behavior:**
+- When configured: All connections reset to this isolation level when returned to pool
+- When not configured: Auto-detects database default (backward compatible)
+- Optimization: Only resets if isolation level was actually changed during session
 
 ### Provider-Specific Properties
 

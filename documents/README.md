@@ -44,6 +44,18 @@ Located in [configuration/](configuration/):
 - [OJP JDBC Configuration](configuration/ojp-jdbc-configuration.md) - JDBC driver configuration
 - [OJP Server Configuration](configuration/ojp-server-configuration.md) - Server configuration
 
+### Connection Pool
+
+Located in [connection-pool/](connection-pool/):
+- [Connection Pool Overview](connection-pool/README.md) - Connection pool abstraction and providers
+- [Connection Pool Configuration](connection-pool/configuration.md) - Configuration reference
+- [Migration Guide](connection-pool/migration-guide.md) - Migration from previous versions
+
+### Analysis and Technical Documentation
+
+Located in [analysis/](analysis/):
+- [Transaction Isolation Handling](analysis/TRANSACTION_ISOLATION_HANDLING.md) - Complete technical documentation on transaction isolation reset behavior
+
 ## Database Setup Guides
 
 Located in [environment-setup/](environment-setup/):
