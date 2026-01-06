@@ -1,0 +1,230 @@
+package org.openjproxy.xa.pool.commons;
+
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+
+import javax.sql.XAConnection;
+import javax.sql.XADataSource;
+import java.sql.Connection;
+import java.sql.SQLException;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+/**
+ * Unit tests for transaction isolation reset functionality in BackendSessionImpl.
+ * These tests verify that the XA connection pool properly resets transaction isolation
+ * when sessions are returned to the pool.
+ */
+class BackendSessionTransactionIsolationTest {
+
+    @Test
+    @DisplayName("Session factory should accept transaction isolation parameter")
+    void testFactoryWithTransactionIsolation() throws Exception {
+        XADataSource mockXADataSource = mock(XADataSource.class);
+        XAConnection mockXAConnection = mock(XAConnection.class);
+        Connection mockConnection = mock(Connection.class);
+        
+        when(mockXADataSource.getXAConnection()).thenReturn(mockXAConnection);
+        when(mockXAConnection.getConnection()).thenReturn(mockConnection);
+        
+        // Create factory with READ_COMMITTED as default
+        BackendSessionFactory factory = new BackendSessionFactory(
+                mockXADataSource,
+                Connection.TRANSACTION_READ_COMMITTED
+        );
+        
+        assertNotNull(factory);
+        
+        // Create a session
+        BackendSessionImpl session = (BackendSessionImpl) factory.makeObject().getObject();
+        assertNotNull(session);
+        
+        // Clean up
+        session.close();
+    }
+
+    @Test
+    @DisplayName("Session factory should work without transaction isolation parameter")
+    void testFactoryWithoutTransactionIsolation() throws Exception {
+        XADataSource mockXADataSource = mock(XADataSource.class);
+        XAConnection mockXAConnection = mock(XAConnection.class);
+        Connection mockConnection = mock(Connection.class);
+        
+        when(mockXADataSource.getXAConnection()).thenReturn(mockXAConnection);
+        when(mockXAConnection.getConnection()).thenReturn(mockConnection);
+        
+        // Create factory without transaction isolation
+        BackendSessionFactory factory = new BackendSessionFactory(mockXADataSource);
+        
+        assertNotNull(factory);
+        
+        // Create a session
+        BackendSessionImpl session = (BackendSessionImpl) factory.makeObject().getObject();
+        assertNotNull(session);
+        
+        // Clean up
+        session.close();
+    }
+
+    @Test
+    @DisplayName("Session reset should handle transaction isolation")
+    void testSessionResetHandlesIsolation() throws Exception {
+        XADataSource mockXADataSource = mock(XADataSource.class);
+        XAConnection mockXAConnection = mock(XAConnection.class);
+        Connection mockConnection = mock(Connection.class);
+        
+        when(mockXADataSource.getXAConnection()).thenReturn(mockXAConnection);
+        when(mockXAConnection.getConnection()).thenReturn(mockConnection);
+        when(mockConnection.isClosed()).thenReturn(false);
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        
+        // Simulate connection with changed isolation
+        when(mockConnection.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_SERIALIZABLE);
+        
+        // Create factory with READ_COMMITTED as default
+        BackendSessionFactory factory = new BackendSessionFactory(
+                mockXADataSource,
+                Connection.TRANSACTION_READ_COMMITTED
+        );
+        
+        BackendSessionImpl session = (BackendSessionImpl) factory.makeObject().getObject();
+        
+        // Reset the session (simulating return to pool)
+        session.reset();
+        
+        // Verify that setTransactionIsolation was called to reset it
+        verify(mockConnection, atLeastOnce()).setTransactionIsolation(Connection.TRANSACTION_READ_COMMITTED);
+        
+        // Clean up
+        session.close();
+    }
+
+    @Test
+    @DisplayName("Session reset should not reset isolation if not changed")
+    void testSessionResetSkipsIfNotChanged() throws Exception {
+        XADataSource mockXADataSource = mock(XADataSource.class);
+        XAConnection mockXAConnection = mock(XAConnection.class);
+        Connection mockConnection = mock(Connection.class);
+        
+        when(mockXADataSource.getXAConnection()).thenReturn(mockXAConnection);
+        when(mockXAConnection.getConnection()).thenReturn(mockConnection);
+        when(mockConnection.isClosed()).thenReturn(false);
+        when(mockConnection.getAutoCommit()).thenReturn(true);
+        
+        // Connection already has default isolation
+        when(mockConnection.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_READ_COMMITTED);
+        
+        // Create factory with READ_COMMITTED as default
+        BackendSessionFactory factory = new BackendSessionFactory(
+                mockXADataSource,
+                Connection.TRANSACTION_READ_COMMITTED
+        );
+        
+        BackendSessionImpl session = (BackendSessionImpl) factory.makeObject().getObject();
+        
+        // Reset the session
+        session.reset();
+        
+        // Verify setTransactionIsolation was NOT called since isolation hasn't changed
+        verify(mockConnection, never()).setTransactionIsolation(anyInt());
+        
+        // Clean up
+        session.close();
+    }
+
+    @Test
+    @DisplayName("Session reset should not reset without default isolation configured")
+    void testSessionResetWithoutDefaultIsolation() throws Exception {
+        XADataSource mockXADataSource = mock(XADataSource.class);
+        XAConnection mockXAConnection = mock(XAConnection.class);
+        Connection mockConnection = mock(Connection.class);
+        
+        when(mockXADataSource.getXAConnection()).thenReturn(mockXAConnection);
+        when(mockXAConnection.getConnection()).thenReturn(mockConnection);
+        when(mockConnection.isClosed()).thenReturn(false);
+        when(mockConnection.getAutoCommit()).thenReturn(true);
+        
+        // Connection has some isolation level
+        when(mockConnection.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_SERIALIZABLE);
+        
+        // Create factory without default isolation
+        BackendSessionFactory factory = new BackendSessionFactory(mockXADataSource);
+        
+        BackendSessionImpl session = (BackendSessionImpl) factory.makeObject().getObject();
+        
+        // Reset the session
+        session.reset();
+        
+        // Verify setTransactionIsolation was NOT called
+        verify(mockConnection, never()).setTransactionIsolation(anyInt());
+        
+        // Clean up
+        session.close();
+    }
+
+    @Test
+    @DisplayName("Session reset should handle all isolation levels")
+    void testAllIsolationLevels() throws Exception {
+        int[] isolationLevels = {
+            Connection.TRANSACTION_NONE,
+            Connection.TRANSACTION_READ_UNCOMMITTED,
+            Connection.TRANSACTION_READ_COMMITTED,
+            Connection.TRANSACTION_REPEATABLE_READ,
+            Connection.TRANSACTION_SERIALIZABLE
+        };
+
+        for (int defaultLevel : isolationLevels) {
+            XADataSource mockXADataSource = mock(XADataSource.class);
+            XAConnection mockXAConnection = mock(XAConnection.class);
+            Connection mockConnection = mock(Connection.class);
+            
+            when(mockXADataSource.getXAConnection()).thenReturn(mockXAConnection);
+            when(mockXAConnection.getConnection()).thenReturn(mockConnection);
+            when(mockConnection.isClosed()).thenReturn(false);
+            when(mockConnection.getAutoCommit()).thenReturn(false);
+            
+            // Connection has different isolation
+            when(mockConnection.getTransactionIsolation()).thenReturn(Connection.TRANSACTION_SERIALIZABLE);
+            
+            BackendSessionFactory factory = new BackendSessionFactory(mockXADataSource, defaultLevel);
+            BackendSessionImpl session = (BackendSessionImpl) factory.makeObject().getObject();
+            
+            // Reset should set to default
+            session.reset();
+            verify(mockConnection).setTransactionIsolation(defaultLevel);
+            
+            // Clean up
+            session.close();
+        }
+    }
+
+    @Test
+    @DisplayName("Session reset should handle SQLException gracefully")
+    void testSQLExceptionDuringReset() throws Exception {
+        XADataSource mockXADataSource = mock(XADataSource.class);
+        XAConnection mockXAConnection = mock(XAConnection.class);
+        Connection mockConnection = mock(Connection.class);
+        
+        when(mockXADataSource.getXAConnection()).thenReturn(mockXAConnection);
+        when(mockXAConnection.getConnection()).thenReturn(mockConnection);
+        when(mockConnection.isClosed()).thenReturn(false);
+        when(mockConnection.getAutoCommit()).thenReturn(false);
+        
+        // Simulate exception when getting isolation
+        when(mockConnection.getTransactionIsolation()).thenThrow(new SQLException("Connection closed"));
+        
+        BackendSessionFactory factory = new BackendSessionFactory(
+                mockXADataSource,
+                Connection.TRANSACTION_READ_COMMITTED
+        );
+        
+        BackendSessionImpl session = (BackendSessionImpl) factory.makeObject().getObject();
+        
+        // Reset should not throw exception
+        assertDoesNotThrow(() -> session.reset());
+        
+        // Clean up
+        session.close();
+    }
+}
