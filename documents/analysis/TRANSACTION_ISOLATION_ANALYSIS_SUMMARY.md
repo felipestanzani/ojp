@@ -10,37 +10,57 @@ Do an analysis on connection.setTransactionIsolation behaviour, my concern is wh
 
 **Answer: YES**
 
-When a client calls `setTransactionIsolation()` and executes statements:
+When a client calls **any Connection method** (including `setTransactionIsolation()`, `executeQuery()`, `executeUpdate()`, or starting a transaction):
 
-1. **Session Creation**: A session is created on the OJP server for each client connection
-2. **Connection Pinning**: The session holds a reference to a physical database connection from the pool
-3. **Session Lifetime**: The connection remains pinned to that session until the client closes the connection
-4. **Multiple Statements**: All statements executed by that client use the same pinned connection
+1. **Lazy Session Creation**: A session is created on the OJP server **on-demand** when the first Connection method is called
+2. **Connection Acquisition**: A physical database connection is acquired from the pool and assigned to the session
+3. **Connection Pinning**: The connection remains pinned to that session for its entire lifetime
+4. **Session Lifetime**: The connection stays pinned until the client closes the connection
+5. **Multiple Statements**: All subsequent operations by that client use the same pinned connection
+
+**Important:** The session and connection pinning happens on the **first** Connection method call, not just on SQL execution. This means:
+- Calling `setTransactionIsolation()` **WILL** create a session and pin a connection
+- Calling `setAutoCommit()` **WILL** create a session and pin a connection
+- Calling `getMetaData()` **WILL** create a session and pin a connection
+- Any Connection method triggers lazy session creation
 
 **Code Evidence:**
 
 ```java
-// Session.java
-public class Session {
-    private Connection connection;  // Pinned connection
-    private final String sessionUUID;
-    private final String clientUUID;
-    // ... other fields
+// StatementServiceImpl.java - callResource method
+case RES_CONNECTION: {
+    // startSessionIfNone = true means session is created if it doesn't exist
+    ConnectionSessionDTO csDto = sessionConnection(request.getSession(), true);
+    responseBuilder.setSession(csDto.getSession());
+    resource = csDto.getConnection();
+    break;
 }
 
-// SessionManagerImpl.java
-public SessionInfo createSession(String clientUUID, Connection connection) {
-    Session session = new Session(connection, connectionHashMap.get(clientUUID), clientUUID);
-    this.sessionMap.put(session.getSessionUUID(), session);
-    return session.getSessionInfo();
+// sessionConnection method
+private ConnectionSessionDTO sessionConnection(SessionInfo sessionInfo, boolean startSessionIfNone) {
+    if (StringUtils.isEmpty(sessionInfo.getSessionUUID())) {
+        // No session exists - acquire connection from pool
+        conn = ConnectionAcquisitionManager.acquireConnection(dataSource, connHash);
+        
+        // Create session and pin connection if startSessionIfNone=true
+        if (startSessionIfNone) {
+            SessionInfo updatedSession = this.sessionManager.createSession(sessionInfo.getClientUUID(), conn);
+            dtoBuilder.session(updatedSession);
+        }
+    } else {
+        // Session already exists - reuse pinned connection
+        conn = this.sessionManager.getConnection(sessionInfo);
+    }
 }
 ```
 
 **Lifecycle:**
 ```
-Client connects
+Client connects (establishes gRPC channel)
     ↓
-Session created with pinned connection
+Client calls setTransactionIsolation() OR executeQuery() OR any Connection method
+    ↓
+Session created with pinned connection (lazy allocation)
     ↓
 Client executes multiple statements (same connection)
     ↓
