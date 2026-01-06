@@ -1,1 +1,0 @@
-org.openjproxy.jdbc.Driver,jdbc:ojp[localhost:1059;ojp.xa.connection.pool.defaultTransactionIsolation=SERIALIZABLE]_postgresql://localhost:5432/defaultdb,testuser,testpassword
