@@ -23,6 +23,7 @@ import org.openjproxy.grpc.server.utils.UrlParser;
 import javax.sql.DataSource;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 
 import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMetadata;
@@ -113,8 +114,12 @@ public class ConnectAction implements Action<ConnectionDetails, SessionInfo> {
                                         StreamObserver<SessionInfo> responseObserver) {
         // Handle non-XA connection - check if pooling is enabled
         DataSource ds = context.getDatasourceMap().get(connHash);
-        StatementServiceImpl.UnpooledConnectionDetails unpooledDetails = 
-                context.getUnpooledConnectionDetailsMap().get(connHash);
+        
+        // Cast the wildcard map to the specific type since we're in the same package as StatementServiceImpl
+        @SuppressWarnings("unchecked")
+        Map<String, StatementServiceImpl.UnpooledConnectionDetails> unpooledMap = 
+                (Map<String, StatementServiceImpl.UnpooledConnectionDetails>) context.getUnpooledConnectionDetailsMap();
+        StatementServiceImpl.UnpooledConnectionDetails unpooledDetails = unpooledMap.get(connHash);
         
         if (ds == null && unpooledDetails == null) {
             try {
@@ -132,7 +137,7 @@ public class ConnectAction implements Action<ConnectionDetails, SessionInfo> {
                             .password(connectionDetails.getPassword())
                             .connectionTimeout(dsConfig.getConnectionTimeout())
                             .build();
-                    context.getUnpooledConnectionDetailsMap().put(connHash, unpooledDetails);
+                    unpooledMap.put(connHash, unpooledDetails);
                     
                     log.info("Unpooled (passthrough) mode enabled for dataSource '{}' with connHash: {}", 
                             dsConfig.getDataSourceName(), connHash);

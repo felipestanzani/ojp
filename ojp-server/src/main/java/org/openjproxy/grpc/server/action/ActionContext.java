@@ -48,8 +48,9 @@ public class ActionContext {
      * Used when regular pooling is disabled (ojp.connection.pool.enabled=false).
      * Key: connection hash
      * Value: connection details for creating direct JDBC connections
+     * Note: Uses wildcard type to avoid exposing StatementServiceImpl inner class
      */
-    private final Map<String, StatementServiceImpl.UnpooledConnectionDetails> unpooledConnectionDetailsMap;
+    private final Map<String, ?> unpooledConnectionDetailsMap;
     
     /**
      * Map of connection hash to database type.
@@ -117,7 +118,7 @@ public class ActionContext {
             Map<String, DataSource> datasourceMap,
             Map<String, XADataSource> xaDataSourceMap,
             Map<String, XATransactionRegistry> xaRegistries,
-            Map<String, StatementServiceImpl.UnpooledConnectionDetails> unpooledConnectionDetailsMap,
+            Map<String, ?> unpooledConnectionDetailsMap,
             Map<String, DbName> dbNameMap,
             Map<String, SlowQuerySegregationManager> slowQuerySegregationManagers,
             XAConnectionPoolProvider xaPoolProvider,
@@ -155,7 +156,7 @@ public class ActionContext {
         return xaRegistries;
     }
     
-    public Map<String, StatementServiceImpl.UnpooledConnectionDetails> getUnpooledConnectionDetailsMap() {
+    public Map<String, ?> getUnpooledConnectionDetailsMap() {
         return unpooledConnectionDetailsMap;
     }
     
