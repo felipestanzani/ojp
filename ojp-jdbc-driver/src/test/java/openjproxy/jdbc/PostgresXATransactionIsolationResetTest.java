@@ -367,15 +367,12 @@ public class PostgresXATransactionIsolationResetTest {
 
     /**
      * Tests custom configured isolation level.
-     * This test modifies the URL to include a custom isolation property.
+     * This test uses a separate CSV file with custom isolation property configured.
      */
     @ParameterizedTest
-    @CsvFileSource(resources = "/postgres_xa_connection.csv")
+    @CsvFileSource(resources = "/postgres_xa_connection_custom_isolation.csv")
     public void testXAConfiguredCustomIsolation(String driverClass, String url, String user, String password) throws Exception {
-        // Add custom isolation property to URL
-        String modifiedUrl = url.replace("jdbc:ojp[localhost:1059]", 
-                                         "jdbc:ojp[localhost:1059;ojp.xa.connection.pool.defaultTransactionIsolation=SERIALIZABLE]");
-        setUp(driverClass, modifiedUrl, user, password);
+        setUp(driverClass, url, user, password);
         
         // When custom isolation is configured via properties, connections should start with that isolation
         xaConnection1 = createXAConnection(url, user, password);
