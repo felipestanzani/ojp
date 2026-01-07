@@ -203,11 +203,33 @@ public class BackendSessionImpl implements XABackendSession {
         log.debug("Sanitizing backend session after transaction: {}", sessionId);
         
         try {
+            // CRITICAL: Reset transaction isolation BEFORE getting fresh connection
+            // We must reset isolation on the CURRENT connection (which reflects the physical connection state)
+            // BEFORE we replace it with a fresh connection from getConnection().
+            // After getConnection() is called, we lose the ability to modify the physical connection's
+            // isolation level because the old connection handle is invalidated.
+            if (defaultTransactionIsolation != null && connection != null) {
+                try {
+                    int currentIsolation = connection.getTransactionIsolation();
+                    if (currentIsolation != defaultTransactionIsolation) {
+                        log.debug("Resetting transaction isolation from {} to default {} BEFORE getting fresh connection", 
+                                currentIsolation, defaultTransactionIsolation);
+                        connection.setTransactionIsolation(defaultTransactionIsolation);
+                    } else {
+                        log.debug("Transaction isolation already at default {} before getting fresh connection", defaultTransactionIsolation);
+                    }
+                } catch (SQLException e) {
+                    log.warn("Error resetting transaction isolation before sanitization: {}", e.getMessage());
+                    // Don't throw - continue with sanitization
+                }
+            }
+            
             // Get a fresh logical connection from the XAConnection
             // According to JDBC spec, calling getConnection() on an XAConnection
             // automatically closes the previous logical connection and returns a new one.
             // This resets the XA state to IDLE in most XA drivers (PostgreSQL, MySQL, Oracle, etc.)
             // We do NOT explicitly close the old connection first - the XAConnection handles that.
+            // IMPORTANT: The physical connection's state (including isolation) is preserved.
             this.connection = xaConnection.getConnection();
             
             // The XAResource should remain the same (from the XAConnection)
@@ -218,23 +240,6 @@ public class BackendSessionImpl implements XABackendSession {
                 connection.clearWarnings();
             } catch (SQLException e) {
                 log.warn("Error clearing warnings after sanitization: {}", e.getMessage());
-            }
-            
-            // CRITICAL: Reset transaction isolation on the NEW connection handle
-            // The fresh connection from getConnection() may have database default isolation
-            // (which varies by DB), not the configured default. We must set it here.
-            if (defaultTransactionIsolation != null) {
-                try {
-                    int currentIsolation = connection.getTransactionIsolation();
-                    if (currentIsolation != defaultTransactionIsolation) {
-                        log.debug("Setting transaction isolation to default {} on fresh connection (was {})", 
-                                defaultTransactionIsolation, currentIsolation);
-                        connection.setTransactionIsolation(defaultTransactionIsolation);
-                    }
-                } catch (SQLException e) {
-                    log.warn("Error setting transaction isolation after sanitization: {}", e.getMessage());
-                    // Don't throw - session is still usable
-                }
             }
             
             log.debug("Backend session sanitized successfully, fresh logical connection obtained");
