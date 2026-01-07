@@ -77,18 +77,18 @@ public class BackendSessionImpl implements XABackendSession {
         this.xaResource = xaConnection.getXAResource();
         
         // Set default transaction isolation level if configured
-        // This must be done in open() because getConnection() returns a fresh logical connection
+        // This is called when session is first created, establishing the initial state
         if (defaultTransactionIsolation != null) {
             try {
                 int currentIsolation = connection.getTransactionIsolation();
                 if (currentIsolation != defaultTransactionIsolation) {
-                    log.debug("Setting transaction isolation to default {} (was {})", 
+                    log.debug("Setting initial transaction isolation to default {} (was {})", 
                             defaultTransactionIsolation, currentIsolation);
                     connection.setTransactionIsolation(defaultTransactionIsolation);
                 }
             } catch (SQLException e) {
                 log.warn("Error setting default transaction isolation in open(): {}", e.getMessage());
-                // Don't throw - continue even if isolation set fails
+                // Don't throw - session is still usable even if isolation set fails
             }
         }
         
@@ -216,31 +216,32 @@ public class BackendSessionImpl implements XABackendSession {
         log.debug("Sanitizing backend session after transaction: {}", sessionId);
         
         try {
-            // Get a fresh logical connection from the XAConnection
-            // According to JDBC spec, calling getConnection() on an XAConnection
-            // automatically closes the previous logical connection and returns a new one.
-            // This resets the XA state to IDLE in most XA drivers (PostgreSQL, MySQL, Oracle, etc.)
-            // We do NOT explicitly close the old connection first - the XAConnection handles that.
-            this.connection = xaConnection.getConnection();
-            
-            // The XAResource should remain the same (from the XAConnection)
-            // No need to re-obtain it - it's tied to the XAConnection, not the logical connection
-            
-            // Set default transaction isolation level if configured
-            // This is critical because getConnection() returns a fresh connection with database default isolation
+            // IMPORTANT: Reset transaction isolation BEFORE getting new connection handle
+            // The physical connection's state (including isolation) persists across getConnection() calls
+            // XAConnection.getConnection() returns a new handle to the SAME physical connection
             if (defaultTransactionIsolation != null) {
                 try {
                     int currentIsolation = connection.getTransactionIsolation();
                     if (currentIsolation != defaultTransactionIsolation) {
-                        log.debug("Setting transaction isolation to default {} after sanitization (was {})", 
+                        log.debug("Resetting transaction isolation to default {} before sanitization (was {})", 
                                 defaultTransactionIsolation, currentIsolation);
                         connection.setTransactionIsolation(defaultTransactionIsolation);
                     }
                 } catch (SQLException e) {
-                    log.warn("Error setting default transaction isolation after sanitization: {}", e.getMessage());
-                    // Don't throw - continue even if isolation set fails
+                    log.warn("Error resetting transaction isolation before sanitization: {}", e.getMessage());
+                    // Don't throw - continue even if isolation reset fails
                 }
             }
+            
+            // Get a fresh logical connection from the XAConnection
+            // According to JDBC spec, calling getConnection() on an XAConnection
+            // automatically closes the previous logical connection and returns a new handle
+            // to the SAME physical connection. This resets the XA state to IDLE in most drivers.
+            // The physical connection state (including isolation level we just set) is preserved.
+            this.connection = xaConnection.getConnection();
+            
+            // The XAResource should remain the same (from the XAConnection)
+            // No need to re-obtain it - it's tied to the XAConnection, not the logical connection
             
             // Clear warnings on the new connection
             try {
