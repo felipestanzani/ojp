@@ -1,30 +1,19 @@
-# StatementServiceImpl Action Pattern Refactoring - Migration Guide
+# StatementServiceImpl Action Pattern Refactoring Guide
 
-## Executive Summary
+## Overview
 
-This document describes the Action pattern refactoring strategy for `StatementServiceImpl`, a 2,528-line God class that violates the Single Responsibility Principle. The refactoring extracts each public method into dedicated Action classes, improving testability, maintainability, and code organization.
+This guide explains how to refactor `StatementServiceImpl` using the Action pattern. The `connect()` method has been implemented as a reference - use it as a template for refactoring the remaining 20 public methods.
 
-**Status**: `connect()` method implemented as reference implementation (PR #XXX)
+**Reference Implementation**: [PR #214](https://github.com/Open-J-Proxy/ojp/pull/214)
 
-## Problem Statement
+## Why Refactor?
 
-### Current State
-- **2,528 lines** in a single class
-- **21 public gRPC endpoints** handling diverse responsibilities
-- **9 shared state maps** with concurrent access patterns
-- **14+ private helper methods** tightly coupled to the service
-- Difficult to test, navigate, and maintain
-- Violates Single Responsibility Principle
+`StatementServiceImpl` is a 2,528-line God class with 21 public methods. The Action pattern splits this into:
+- **StatementServiceImpl**: Thin orchestrator (~400 lines)
+- **35+ Action classes**: Focused, testable units (~75 lines each)
+- **ActionContext**: Centralized shared state holder
 
-### Target State
-- **~400 lines** in StatementServiceImpl (thin orchestrator)
-- **35+ focused Action classes** (~75 lines average)
-- **Centralized ActionContext** for shared state
-- **4 Action interfaces** supporting all method signatures
-- Each action independently testable
-- Clear separation of concerns
-
-## Architecture Overview
+## Architecture Diagrams
 
 ### Class Diagram
 
@@ -138,7 +127,7 @@ classDiagram
     ConnectAction --> HandleXAConnectionWithPoolingAction : uses
 ```
 
-### Connect Method Sequence Diagram (Reference Implementation)
+### Connect Method Flow (Reference Implementation)
 
 ```mermaid
 sequenceDiagram
@@ -178,10 +167,13 @@ sequenceDiagram
     StatementServiceImpl->>Client: SessionInfo response
 ```
 
-## Action Interfaces
+## How It Works
 
-### 1. Action<TRequest, TResponse>
-Standard unary/server-streaming RPC methods (covers 20 of 21 methods).
+### Action Interfaces
+
+Choose the right interface for your method:
+#### 1. Action<TRequest, TResponse>
+For standard RPC methods (20 of 21 methods).
 
 ```java
 public interface Action<TRequest, TResponse> {
@@ -189,17 +181,10 @@ public interface Action<TRequest, TResponse> {
 }
 ```
 
-**Used by**:
-- Connection: `connect`
-- Statement Execution: `executeUpdate`, `executeQuery`, `fetchNextRows`
-- Transaction: `startTransaction`, `commitTransaction`, `rollbackTransaction`
-- Session: `terminateSession`
-- Resource: `callResource`
-- LOB: `readLob`
-- XA Operations: `xaStart`, `xaEnd`, `xaPrepare`, `xaCommit`, `xaRollback`, `xaRecover`, `xaForget`, `xaSetTransactionTimeout`, `xaGetTransactionTimeout`, `xaIsSameRM`
+**Examples**: connect, executeUpdate, executeQuery, transactions, XA operations, etc.
 
-### 2. StreamingAction<TRequest, TResponse>
-Bidirectional streaming operations (1 method).
+#### 2. StreamingAction<TRequest, TResponse>
+For bidirectional streaming (1 method: createLob).
 
 ```java
 public interface StreamingAction<TRequest, TResponse> {
@@ -207,87 +192,45 @@ public interface StreamingAction<TRequest, TResponse> {
 }
 ```
 
-**Used by**:
-- LOB: `createLob`
+#### 3. InitAction & ValueAction
+For initialization and internal helpers.
 
-### 3. InitAction
-Initialization operations without parameters.
+### ActionContext
 
-```java
-public interface InitAction {
-    void execute();
-}
-```
+Holds all shared state (maps, services) used by actions. Thread-safe with ConcurrentHashMap.
 
-**Used by**:
-- Initialization helpers (e.g., `initializeXAPoolProvider`)
+**Key fields**:
+- `datasourceMap`, `xaDataSourceMap` - Database connections
+- `sessionManager` - Session/connection management  
+- `circuitBreaker` - Failure protection
+- `serverConfiguration` - Server config
 
-### 4. ValueAction<TRequest, TResult>
-Internal helper actions that return values directly.
-
-```java
-public interface ValueAction<TRequest, TResult> {
-    TResult execute(TRequest request) throws Exception;
-}
-```
-
-**Used by**:
-- Internal action composition (e.g., `executeUpdateInternal`, `findLobContext`)
-
-## ActionContext Design
-
-### Purpose
-Centralized holder for all shared state and dependencies used by Action classes. Thread-safe with ConcurrentHashMap for all maps.
-
-### Fields
-
-| Category | Field | Type | Description |
-|----------|-------|------|-------------|
-| **Datasources** | datasourceMap | Map<String, DataSource> | Regular JDBC datasources |
-| | xaDataSourceMap | Map<String, XADataSource> | XA-capable datasources |
-| | xaRegistries | Map<String, XATransactionRegistry> | XA transaction registries |
-| | unpooledConnectionDetailsMap | Map<String, UnpooledConnectionDetails> | Unpooled connection configs |
-| **Configuration** | dbNameMap | Map<String, DbName> | Database type per connection |
-| | slowQuerySegregationManagers | Map<String, SlowQuerySegregationManager> | Query segregation managers |
-| **XA Support** | xaPoolProvider | XAConnectionPoolProvider | XA pool SPI provider |
-| | xaCoordinator | MultinodeXaCoordinator | Multinode XA coordinator |
-| **Monitoring** | clusterHealthTracker | ClusterHealthTracker | Health monitoring |
-| **Services** | sessionManager | SessionManager | Session/connection manager |
-| | circuitBreaker | CircuitBreaker | Failure protection |
-| | serverConfiguration | ServerConfiguration | Server-wide config |
+Actions access via `context.getDatasourceMap()`, `context.getSessionManager()`, etc.
 
 ## Implementation Pattern
 
-### Before (God Class Pattern)
+### Before: God Class (144 lines inline)
 ```java
 public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceImplBase {
-    // 144 lines of connection logic inline
     public void connect(ConnectionDetails details, StreamObserver<SessionInfo> observer) {
-        // Health checks
-        // Connection hash generation
-        // XA vs regular branching
-        // Multinode coordination
-        // Pool creation
-        // Session management
-        // ... 144 lines total
+        // 144 lines of logic: health checks, hashing, XA branching,
+        // multinode coordination, pool creation, session management...
     }
 }
 ```
 
-### After (Action Pattern)
+### After: Action Pattern (3 lines + focused action)
 ```java
+// StatementServiceImpl - thin delegator
 public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceImplBase {
     private final ActionContext actionContext;
     
-    // 3 lines - thin delegator
     public void connect(ConnectionDetails details, StreamObserver<SessionInfo> observer) {
         new ConnectAction(actionContext).execute(details, observer);
     }
 }
-```
 
-### Action Implementation
-```java
+// ConnectAction - focused logic (~150 lines)
 @Slf4j
 public class ConnectAction implements Action<ConnectionDetails, SessionInfo> {
     private final ActionContext context;
@@ -298,183 +241,36 @@ public class ConnectAction implements Action<ConnectionDetails, SessionInfo> {
     
     @Override
     public void execute(ConnectionDetails request, StreamObserver<SessionInfo> responseObserver) {
-        // Focused logic for connection handling
-        // Access shared state via context
-        // Delegate to helper actions as needed
+        // Connection handling logic
+        // Access: context.getDatasourceMap(), context.getSessionManager(), etc.
+        // Delegate to helper actions: new HandleXAConnectionAction(context).execute(...)
     }
 }
 ```
 
-## Migration Plan
+## Quick Start for Contributors
 
-### Phase 1: Infrastructure (Week 1) ✅ COMPLETED
-- [x] Create Action interface hierarchy (4 interfaces)
-- [x] Create ActionContext class
-- [x] Initialize ActionContext in StatementServiceImpl constructor
-- [x] Extract UnpooledConnectionDetails to separate class
+### 1. Study the Reference
+Review [PR #214](https://github.com/Open-J-Proxy/ojp/pull/214) - especially `ConnectAction` and how it uses ActionContext.
 
-### Phase 2: Reference Implementation (Week 2) ✅ COMPLETED
-- [x] Implement ConnectAction (main orchestrator)
-- [x] Implement HandleXAConnectionWithPoolingAction
-- [x] Implement HandleUnpooledXAConnectionAction
-- [x] Implement CreateSlowQuerySegregationManagerAction
-- [x] Implement ProcessClusterHealthAction
-- [x] Update StatementServiceImpl.connect() to delegate
-- [x] Verify compilation and tests
+### 2. Pick a Method to Refactor
+Choose any of the 20 remaining public methods in `StatementServiceImpl`:
+- **Simple**: `startTransaction`, `commitTransaction`, `rollbackTransaction`, `terminateSession`, XA operations (xaEnd, xaForget, etc.)
+- **Medium**: `executeUpdate`, `executeQuery`, `fetchNextRows`, `callResource`, `xaStart`, `xaPrepare`
+- **Complex**: `createLob`, `readLob`
 
-### Phase 3: Simple Actions (Weeks 3-4) ⏳ NEXT
-Implement actions for stateless or simple operations:
-
-| Method | Action Class | Complexity | Estimated LOC |
-|--------|--------------|------------|---------------|
-| startTransaction | StartTransactionAction | Simple | 40-50 |
-| commitTransaction | CommitTransactionAction | Simple | 40-50 |
-| rollbackTransaction | RollbackTransactionAction | Simple | 40-50 |
-| terminateSession | TerminateSessionAction | Simple | 50-60 |
-| callResource | CallResourceAction | Medium | 80-100 |
-
-### Phase 4: Statement Execution (Weeks 5-6) ⏳ PENDING
-Implement core statement execution actions:
-
-| Method | Action Class | Complexity | Estimated LOC |
-|--------|--------------|------------|---------------|
-| executeUpdate | ExecuteUpdateAction | Medium | 100-120 |
-| executeQuery | ExecuteQueryAction | Medium | 100-120 |
-| fetchNextRows | FetchNextRowsAction | Medium | 80-100 |
-
-Helper actions:
-- ExecuteUpdateInternalAction
-- ExecuteQueryInternalAction
-- ProcessResultSetAction
-
-### Phase 5: XA Operations (Weeks 7-8) ⏳ PENDING
-Implement XA transaction actions:
-
-| Method | Action Class | Complexity | Estimated LOC |
-|--------|--------------|------------|---------------|
-| xaStart | XaStartAction | Medium | 90-110 |
-| xaEnd | XaEndAction | Simple | 40-50 |
-| xaPrepare | XaPrepareAction | Medium | 50-60 |
-| xaCommit | XaCommitAction | Medium | 50-60 |
-| xaRollback | XaRollbackAction | Medium | 50-60 |
-| xaRecover | XaRecoverAction | Medium | 30-40 |
-| xaForget | XaForgetAction | Simple | 30-40 |
-| xaSetTransactionTimeout | XaSetTransactionTimeoutAction | Simple | 30-40 |
-| xaGetTransactionTimeout | XaGetTransactionTimeoutAction | Simple | 30-40 |
-| xaIsSameRM | XaIsSameRMAction | Simple | 30-40 |
-
-### Phase 6: LOB Operations (Week 9) ⏳ PENDING
-Implement streaming LOB actions:
-
-| Method | Action Class | Complexity | Estimated LOC |
-|--------|--------------|------------|---------------|
-| createLob | CreateLobAction | Complex | 150-180 |
-| readLob | ReadLobAction | Complex | 150-180 |
-
-Helper actions:
-- ProcessLobDataBlockAction
-- FindLobContextAction
-
-### Phase 7: Cleanup & Testing (Week 10) ⏳ PENDING
-- Remove all extracted code from StatementServiceImpl
-- Final integration testing
-- Performance benchmarking
-- Update documentation
-- Code review
-
-## Package Structure
-
-```
-org.openjproxy.grpc.server
-├── StatementServiceImpl.java (~400 lines - orchestrator)
-├── ActionContext.java
-├── UnpooledConnectionDetails.java
-└── action/
-    ├── Action.java
-    ├── StreamingAction.java
-    ├── InitAction.java
-    ├── ValueAction.java
-    ├── connection/
-    │   ├── ConnectAction.java ✅
-    │   ├── HandleXAConnectionWithPoolingAction.java ✅
-    │   ├── HandleUnpooledXAConnectionAction.java ✅
-    │   ├── CreateSlowQuerySegregationManagerAction.java ✅
-    ├── transaction/
-    │   ├── StartTransactionAction.java ⏳
-    │   ├── CommitTransactionAction.java ⏳
-    │   └── RollbackTransactionAction.java ⏳
-    ├── statement/
-    │   ├── ExecuteUpdateAction.java ⏳
-    │   ├── ExecuteQueryAction.java ⏳
-    │   ├── FetchNextRowsAction.java ⏳
-    │   ├── ExecuteUpdateInternalAction.java ⏳
-    │   └── ExecuteQueryInternalAction.java ⏳
-    ├── xa/
-    │   ├── XaStartAction.java ⏳
-    │   ├── XaEndAction.java ⏳
-    │   ├── XaPrepareAction.java ⏳
-    │   ├── XaCommitAction.java ⏳
-    │   ├── XaRollbackAction.java ⏳
-    │   ├── XaRecoverAction.java ⏳
-    │   ├── XaForgetAction.java ⏳
-    │   ├── XaSetTransactionTimeoutAction.java ⏳
-    │   ├── XaGetTransactionTimeoutAction.java ⏳
-    │   └── XaIsSameRMAction.java ⏳
-    ├── lob/
-    │   ├── CreateLobAction.java ⏳
-    │   ├── ReadLobAction.java ⏳
-    │   ├── ProcessLobDataBlockAction.java ⏳
-    │   └── FindLobContextAction.java ⏳
-    ├── session/
-    │   └── TerminateSessionAction.java ⏳
-    ├── resource/
-    │   └── CallResourceAction.java ⏳
-    └── util/
-        ├── ProcessClusterHealthAction.java ✅
-        └── ProcessResultSetAction.java ⏳
-```
-
-## Implementation Guidelines
-
-### For Contributors
-
-#### 1. Study the Reference Implementation
-- Review PR #XXX (connect method refactoring)
-- Study `ConnectAction` and its helper actions
-- Understand the ActionContext usage pattern
-
-#### 2. Choose an Issue
-- Start with "Simple" complexity issues if new to the codebase
-- Check the issue labels: `good first issue`, `ojp-server`, `feature`
-- Comment on the issue to claim it
-
-#### 3. Implementation Steps
-1. **Create the Action class** in the appropriate package
-2. **Implement the interface** (Action, StreamingAction, InitAction, or ValueAction)
-3. **Extract logic** from StatementServiceImpl method (copy-paste, then refactor)
-4. **Update references** to use `context.getXxx()` for shared state
-5. **Update StatementServiceImpl** to delegate to the new action
-6. **Compile and test** - ensure no regressions
-7. **Create PR** referencing the original issue
-
-#### 4. Testing
-- Ensure existing tests pass
-- Add unit tests for the new action class
-- Test edge cases and error handling
-
-#### 5. Code Review Checklist
-- [ ] Action class is focused on single responsibility
-- [ ] All shared state accessed through ActionContext
-- [ ] Error handling preserved from original method
-- [ ] Logging preserved and appropriate
-- [ ] Thread safety maintained
-- [ ] No functional changes (pure refactoring)
-- [ ] Compilation successful
-- [ ] Tests passing
+### 3. Implementation Steps
+1. **Create action class** in appropriate package (e.g., `org.openjproxy.grpc.server.action.transaction`)
+2. **Implement interface** (usually `Action<TRequest, TResponse>`)
+3. **Copy method logic** from `StatementServiceImpl` to action's `execute()` method
+4. **Replace field access** with `context.getXxx()` calls
+5. **Update StatementServiceImpl** to delegate: `new YourAction(actionContext).execute(request, observer);`
+6. **Test** - ensure compilation and existing tests pass
+7. **Submit PR** with clear description
 
 ### Common Patterns
 
-#### Pattern 1: Simple Delegation
+#### Simple Delegation
 ```java
 // In StatementServiceImpl
 public void methodName(Request request, StreamObserver<Response> observer) {
@@ -482,16 +278,15 @@ public void methodName(Request request, StreamObserver<Response> observer) {
 }
 ```
 
-#### Pattern 2: Accessing Shared State
+#### Accessing Shared State
 ```java
 // In Action class
 DataSource ds = context.getDatasourceMap().get(connHash);
 SessionManager sessionManager = context.getSessionManager();
 ```
 
-#### Pattern 3: Error Handling
+#### Error Handling
 ```java
-// Preserve original error handling
 try {
     // Action logic
     responseObserver.onNext(response);
@@ -502,56 +297,31 @@ try {
 }
 ```
 
-#### Pattern 4: Helper Action Composition
-```java
-// Main action delegates to helper actions
-public void execute(Request request, StreamObserver<Response> observer) {
-    HelperResult result = new HelperAction(context).execute(request);
-    // Use result
-}
+## Package Structure
+
+Actions are organized by functionality:
+
+```
+org.openjproxy.grpc.server.action/
+├── connection/        ConnectAction ✅ (reference implementation)
+├── transaction/       Start/Commit/Rollback transactions
+├── statement/         ExecuteUpdate, ExecuteQuery, FetchNextRows
+├── xa/                XA transaction operations (10 methods)
+├── lob/               CreateLob, ReadLob (streaming)
+├── session/           TerminateSession
+├── resource/          CallResource
+└── util/              ProcessClusterHealth ✅, helpers
 ```
 
-## Expected Outcomes
+## Benefits
 
-### Quantitative Improvements
 
-| Metric | Before | After | Improvement |
-|--------|--------|-------|-------------|
-| Main class LOC | 2,528 | ~400 | -84% |
-| Number of classes | 1 | ~36 | +3,500% |
-| Average class size | 2,528 | ~75 | -97% |
-| Testable units | 1 | ~36 | +3,500% |
-| Cyclomatic complexity | Very High | Low | Significant |
-| Method length | 10-200 lines | 20-80 lines | More consistent |
-
-### Qualitative Improvements
 - ✅ **Testability**: Each action independently testable
-- ✅ **Maintainability**: Focused classes easier to understand and modify
-- ✅ **Navigability**: Clear package structure and naming
-- ✅ **Onboarding**: New developers can understand individual actions
-- ✅ **Debugging**: Easier to trace and debug specific operations
-- ✅ **Code Review**: Smaller, focused PRs easier to review
-- ✅ **Parallel Development**: Multiple developers can work on different actions
+- ✅ **Maintainability**: ~75 line focused classes vs 2,528 line God class  
+- ✅ **Code Review**: Smaller, focused PRs
+- ✅ **Parallel Development**: Multiple contributors can work simultaneously
+- ✅ **Debugging**: Easier to trace specific operations
 
-## Reference Implementation
+---
 
-See PR #XXX for the complete implementation of the `connect()` method refactoring:
-- ConnectAction with full connection handling logic
-- Helper actions for XA pooling and unpooled connections
-- ActionContext initialization and usage
-- Complete test coverage
-- Compilation verification
-
-Use this PR as a template for implementing remaining methods.
-
-## Questions & Support
-
-For questions or clarifications:
-1. Comment on the specific GitHub issue
-2. Reference this migration guide
-3. Review the reference implementation (PR #XXX)
-4. Ask in project discussions
-
-## License
-
-This refactoring maintains the same license as the parent OJP project.
+**Get started**: Pick a method from `StatementServiceImpl`, study ConnectAction in [PR #214](https://github.com/Open-J-Proxy/ojp/pull/214), and submit your PR!
