@@ -1,4 +1,4 @@
-# ADR 006: Use Apache Commons Pool 2 with Custom XA Session Pooling Instead of Agroal
+# ADR 007: Use Apache Commons Pool 2 with Custom XA Session Pooling Instead of Agroal
 
 In the context of the OJP proxy server,  
 facing the need to pool XA-enabled database connections for distributed transactions with leak detection and validation monitoring capabilities,  
