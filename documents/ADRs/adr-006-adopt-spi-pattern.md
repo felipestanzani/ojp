@@ -95,6 +95,6 @@ Providers are discovered automatically at runtime via ServiceLoader, selected ba
 | Status      | APPROVED        |  
 |-------------|-----------------| 
 | Proposer(s) | Rogerio Robetti | 
-| Proposal date | 01/08/2025      | 
+| Proposal date | 08/01/2025      | 
 | Approver(s) | Rogerio Robetti |
-| Approval date | 01/08/2025      |
+| Approval date | 08/01/2025      |
