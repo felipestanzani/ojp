@@ -125,6 +125,9 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     // Server configuration for creating segregation managers
     private final ServerConfiguration serverConfiguration;
     
+    // SQL Enhancer Engine for query optimization
+    private final org.openjproxy.grpc.server.sql.SqlEnhancerEngine sqlEnhancerEngine;
+    
     // Multinode XA coordinator for distributing transaction limits
     private static final MultinodeXaCoordinator xaCoordinator = new MultinodeXaCoordinator();
     
@@ -155,6 +158,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         this.sessionManager = sessionManager;
         this.circuitBreaker = circuitBreaker;
         this.serverConfiguration = serverConfiguration;
+        this.sqlEnhancerEngine = new org.openjproxy.grpc.server.sql.SqlEnhancerEngine(serverConfiguration.isSqlEnhancerEnabled());
         initializeXAPoolProvider();
     }
 
@@ -1085,15 +1089,27 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     private void executeQueryInternal(StatementRequest request, StreamObserver<OpResult> responseObserver) throws SQLException {
         ConnectionSessionDTO dto = this.sessionConnection(request.getSession(), true);
 
+        // Phase 1: SQL Enhancement - parse SQL if enhancer is enabled
+        String sql = request.getSql();
+        if (sqlEnhancerEngine.isEnabled()) {
+            org.openjproxy.grpc.server.sql.SqlEnhancementResult result = sqlEnhancerEngine.enhance(sql);
+            sql = result.getEnhancedSql();
+            
+            if (result.isModified()) {
+                log.debug("SQL was enhanced: {} -> {}", request.getSql().substring(0, Math.min(request.getSql().length(), 50)), 
+                         sql.substring(0, Math.min(sql.length(), 50)));
+            }
+        }
+
         List<Parameter> params = ProtoConverter.fromProtoList(request.getParametersList());
         if (CollectionUtils.isNotEmpty(params)) {
-            PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, request.getSql(), params, request);
+            PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, sql, params, request);
             String resultSetUUID = this.sessionManager.registerResultSet(dto.getSession(), ps.executeQuery());
             this.handleResultSet(dto.getSession(), resultSetUUID, responseObserver);
         } else {
             Statement stmt = StatementFactory.createStatement(sessionManager, dto.getConnection(), request);
             String resultSetUUID = this.sessionManager.registerResultSet(dto.getSession(),
-                    stmt.executeQuery(request.getSql()));
+                    stmt.executeQuery(sql));
             this.handleResultSet(dto.getSession(), resultSetUUID, responseObserver);
         }
     }

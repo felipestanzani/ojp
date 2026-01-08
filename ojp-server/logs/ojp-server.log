@@ -1,0 +1,5 @@
+2026-01-08 22:45:20.485 [main] INFO  o.o.g.server.sql.SqlEnhancerEngine - SQL Enhancer Engine initialized and enabled
+2026-01-08 22:45:20.590 [main] INFO  o.o.g.server.sql.SqlEnhancerEngine - SQL Enhancer Engine initialized and enabled
+2026-01-08 22:45:20.593 [main] INFO  o.o.g.server.sql.SqlEnhancerEngine - SQL Enhancer Engine initialized but disabled
+2026-01-08 22:45:20.595 [main] INFO  o.o.g.server.sql.SqlEnhancerEngine - SQL Enhancer Engine initialized and enabled
+2026-01-08 22:45:20.618 [main] INFO  o.o.g.server.sql.SqlEnhancerEngine - SQL Enhancer Engine initialized and enabled
