@@ -8,7 +8,7 @@
 
 ## Executive Summary
 
-This document analyzes the feasibility, benefits, risks, and implementation approach for integrating an **Apache Calcite-based SQL enhancer engine** within the OJP (Open J Proxy) server. The proposed feature would provide SQL query optimization and enhancement capabilities, controlled via a configuration flag in `ojp.properties`, and enabled by default.
+This document analyzes the feasibility, benefits, risks, and implementation approach for integrating an **Apache Calcite-based SQL enhancer engine** within the OJP (Open J Proxy) server. The proposed feature would provide SQL query optimization and enhancement capabilities, controlled via a configuration flag in `ojp.properties`, and disabled by default.
 
 **Recommendation:** ✅ **Proceed with aggressive implementation** - The integration is technically feasible and provides significant value. Given OJP is in beta, we can move quickly with proper testing and monitoring.
 
@@ -274,7 +274,7 @@ private static final String SQL_ENHANCER_VALIDATION_ONLY_KEY = "ojp.sql.enhancer
 private static final String SQL_ENHANCER_LOG_OPTIMIZATIONS_KEY = "ojp.sql.enhancer.logOptimizations";
 
 // Default values
-public static final boolean DEFAULT_SQL_ENHANCER_ENABLED = true; // ENABLED by default
+public static final boolean DEFAULT_SQL_ENHANCER_ENABLED = false; // DISABLED by default
 public static final String DEFAULT_SQL_ENHANCER_MODE = "OPTIMIZE"; // VALIDATE, OPTIMIZE, TRANSLATE
 public static final boolean DEFAULT_SQL_ENHANCER_VALIDATION_ONLY = false;
 public static final boolean DEFAULT_SQL_ENHANCER_LOG_OPTIMIZATIONS = true;
@@ -311,8 +311,8 @@ public static final boolean DEFAULT_SQL_ENHANCER_LOG_OPTIMIZATIONS = true;
 #### Basic Configuration
 
 ```properties
-# Enable/disable SQL enhancer (default: true)
-ojp.sql.enhancer.enabled=true
+# Enable/disable SQL enhancer (default: false)
+ojp.sql.enhancer.enabled=false
 
 # Enhancement mode: VALIDATE, OPTIMIZE, TRANSLATE, ANALYZE
 # - VALIDATE: Only validate SQL, don't modify
@@ -398,7 +398,7 @@ Following OJP's existing pattern:
 - Calcite dependency added and compiling
 - SQL parsing functional
 - Configuration flags working
-- Feature enabled by default but in pass-through mode
+- Feature disabled by default, opt-in via configuration
 
 **Session Size:** ~4-6 hours of Copilot work
 
@@ -716,7 +716,7 @@ The SQL enhancer will extend this:
 3. ✅ **Sanitize all error messages**
 4. ✅ **Log security events (suspicious queries)**
 5. ✅ **Regular security audits of Calcite dependency**
-6. ✅ **Easy to disable (opt-out if needed)**
+6. ✅ **Easy to enable (opt-in when ready)**
 
 ---
 
@@ -797,9 +797,9 @@ The SQL enhancer will extend this:
 ### Open Questions
 
 1. **Q: Should optimization be enabled by default once stable?**
-   - **Answer:** Yes, enable by default (updated)
-   - **Reasoning:** OJP is in beta, can be aggressive with new features
-   - **Safety:** Easy to disable per datasource via configuration
+   - **Answer:** No, keep disabled by default (updated)
+   - **Reasoning:** Allows users to opt-in when ready, safer default
+   - **Safety:** Easy to enable per datasource via configuration
 
 2. **Q: Should we support user-defined optimization rules?**
    - **Answer:** Not right now
@@ -912,7 +912,7 @@ The SQL enhancer will extend this:
    - ✅ No production-blocking issues
 
 4. **Adoption:**
-   - ✅ Feature enabled by default
+   - ✅ Feature disabled by default, users opt-in when ready
    - ✅ Positive user feedback
    - ✅ Measurable performance improvements
 
@@ -1048,12 +1048,12 @@ Integrating Apache Calcite as a SQL enhancer engine in OJP is **technically feas
 3. ✅ **Aggressive:** OJP is in beta, perfect time for ambitious features
 4. ✅ **Fast:** 3 phases, each fitting in one 4-6 hour Copilot session
 5. ✅ **Integrated:** Reuses existing QueryPerformanceMonitor infrastructure
-6. ✅ **Configurable:** Enabled by default, easy to disable per datasource
+6. ✅ **Configurable:** Disabled by default, easy to enable per datasource
 
 **Recommendation:** **Start Phase 1 immediately** - begin with basic Calcite integration and parsing, then move quickly through validation and optimization in subsequent phases.
 
 **Updated Based on Feedback:**
-- ✅ Enable by default (changed from disabled)
+- ✅ Disabled by default (reverted back to disabled for safety)
 - ✅ User-defined rules: Not right now (confirmed)
 - ✅ Database functions: Via Calcite's custom function registry (confirmed)
 - ✅ Schema metadata: Clarified what it means, optional in Phase 3
