@@ -25,100 +25,12 @@ As the project evolved, several requirements emerged:
 
 ## Decision
 
-We implemented two Service Provider Interfaces (SPIs):
+We adopted the Service Provider Interface (SPI) pattern using Java's built-in ServiceLoader mechanism to enable pluggable connection pool implementations. Two SPIs were defined:
 
-### 1. ConnectionPoolProvider
-**Purpose**: Manages standard (non-XA) JDBC connection pools  
-**Location**: `org.openjproxy.datasource.ConnectionPoolProvider`
+1. **ConnectionPoolProvider**: For managing standard (non-XA) JDBC connection pools
+2. **XAConnectionPoolProvider**: For managing XA-enabled connection pools for distributed transactions
 
-**Key Methods**:
-- `String id()` - Unique provider identifier
-- `DataSource createDataSource(PoolConfig config)` - Creates configured pool
-- `void closeDataSource(DataSource ds)` - Releases pool resources
-- `Map<String, Object> getStatistics(DataSource ds)` - Returns pool metrics
-- `int getPriority()` - Selection priority (higher wins)
-- `boolean isAvailable()` - Checks if dependencies are present
-
-**Built-in Implementations**:
-- HikariCP (priority 100) - Default high-performance pool
-- Apache DBCP (priority 10) - Alternative implementation
-
-### 2. XAConnectionPoolProvider
-**Purpose**: Manages XA-enabled connection pools for distributed transactions  
-**Location**: `org.openjproxy.xa.pool.spi.XAConnectionPoolProvider`
-
-**Key Methods**:
-- `String id()` - Unique provider identifier
-- `XADataSource createXADataSource(Map<String, String> config)` - Creates XA pool
-- `void closeXADataSource(XADataSource ds)` - Releases pool resources
-- `XABackendSession borrowSession(Object xaDataSource)` - Obtains session from pool
-- `void returnSession(Object xaDataSource, XABackendSession session)` - Returns session
-- `void invalidateSession(Object xaDataSource, XABackendSession session)` - Invalidates broken session
-- `int getPriority()` - Selection priority (higher wins)
-- `boolean isAvailable()` - Checks if dependencies are present
-
-**Built-in Implementation**:
-- CommonsPool2XAProvider (priority 100) - Universal provider using Apache Commons Pool 2, works with all XA-capable databases via reflection
-
-### Provider Selection Mechanism
-
-Both SPIs use identical selection logic implemented in their respective registries:
-
-```java
-// ConnectionPoolProviderRegistry
-public static Optional<ConnectionPoolProvider> getDefaultProvider() {
-    return providers.values().stream()
-            .filter(ConnectionPoolProvider::isAvailable)
-            .max(Comparator.comparingInt(ConnectionPoolProvider::getPriority));
-}
-
-// XA Provider Selection (in StatementServiceImpl)
-int highestPriority = Integer.MIN_VALUE;
-for (XAConnectionPoolProvider provider : loader) {
-    if (provider.isAvailable() && provider.getPriority() > highestPriority) {
-        selectedProvider = provider;
-        highestPriority = provider.getPriority();
-    }
-}
-```
-
-**Selection Criteria**:
-1. Provider must be available (`isAvailable()` returns `true`)
-2. Provider with highest priority wins
-3. Ties are resolved by ServiceLoader discovery order
-
-### Registration
-
-Providers are registered using Java's standard ServiceLoader mechanism:
-
-**File**: `META-INF/services/org.openjproxy.datasource.ConnectionPoolProvider`
-```
-org.openjproxy.datasource.hikari.HikariConnectionPoolProvider
-```
-
-**File**: `META-INF/services/org.openjproxy.xa.pool.spi.XAConnectionPoolProvider`
-```
-org.openjproxy.xa.pool.commons.CommonsPool2XAProvider
-```
-
-### Integration with External Driver Loading
-
-The SPI pattern integrates seamlessly with OJP's external driver loading mechanism (`ojp-libs` directory):
-
-1. At startup, OJP loads all JARs from `ojp-libs` using `URLClassLoader`
-2. ServiceLoader discovers providers from both bundled and external JARs
-3. Providers are selected based on availability and priority
-4. No recompilation or configuration changes required
-
-**Example Deployment**:
-```
-ojp-libs/
-├── ojdbc11.jar                    # Oracle JDBC driver
-├── ucp.jar                        # Oracle UCP library
-└── oracle-ucp-xa-provider-1.0.jar # Custom XA provider (priority 150)
-```
-
-The custom Oracle UCP provider would automatically override CommonsPool2XAProvider (priority 100) for all XA connections.
+Providers are discovered automatically at runtime via ServiceLoader, selected based on availability and priority (higher priority wins), and can be deployed externally without recompiling OJP Server. This approach integrates with OJP's external driver loading mechanism, allowing custom implementations to be added by placing JARs in the `ojp-libs` directory.
 
 ## Consequences
 
