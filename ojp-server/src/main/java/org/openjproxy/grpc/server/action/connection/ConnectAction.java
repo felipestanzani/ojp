@@ -157,7 +157,20 @@ public class ConnectAction implements Action<ConnectionDetails, SessionInfo> {
                                 connHash, serverEndpoints.size(), maxPoolSize, minIdle);
                     }
                     
-                    // Build PoolConfig from connection details and configuration
+                    // Get transaction isolation from configuration, default to READ_COMMITTED
+                    Integer configuredTransactionIsolation = dsConfig.getDefaultTransactionIsolation();
+                    Integer defaultTransactionIsolation = configuredTransactionIsolation != null 
+                            ? configuredTransactionIsolation 
+                            : java.sql.Connection.TRANSACTION_READ_COMMITTED;
+                    
+                    if (configuredTransactionIsolation == null) {
+                        log.info("No transaction isolation configured for {}, using default READ_COMMITTED", connHash);
+                    } else {
+                        log.info("Using configured transaction isolation level for {}: {}", 
+                                connHash, configuredTransactionIsolation);
+                    }
+                    
+                    // Build PoolConfig with transaction isolation (configured or default)
                     PoolConfig poolConfig = PoolConfig.builder()
                             .url(UrlParser.parseUrl(connectionDetails.getUrl()))
                             .username(connectionDetails.getUser())
@@ -167,11 +180,14 @@ public class ConnectAction implements Action<ConnectionDetails, SessionInfo> {
                             .connectionTimeoutMs(dsConfig.getConnectionTimeout())
                             .idleTimeoutMs(dsConfig.getIdleTimeout())
                             .maxLifetimeMs(dsConfig.getMaxLifetime())
+                            .defaultTransactionIsolation(defaultTransactionIsolation)
                             .metricsPrefix("OJP-Pool-" + dsConfig.getDataSourceName())
                             .build();
                     
-                    // Create DataSource using the SPI (HikariCP by default)
+                    // Create DataSource with properly configured transaction isolation
                     ds = ConnectionPoolProviderRegistry.createDataSource(poolConfig);
+                    log.info("Created DataSource with transaction isolation level: {}", defaultTransactionIsolation);
+                    
                     context.getDatasourceMap().put(connHash, ds);
                     
                     // Create a slow query segregation manager for this datasource
