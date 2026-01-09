@@ -4,6 +4,7 @@ import org.apache.commons.pool2.impl.GenericObjectPool;
 import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.openjproxy.xa.pool.XABackendSession;
 import org.openjproxy.xa.pool.commons.housekeeping.BorrowInfo;
+import org.openjproxy.xa.pool.commons.housekeeping.DiagnosticsTask;
 import org.openjproxy.xa.pool.commons.housekeeping.HousekeepingConfig;
 import org.openjproxy.xa.pool.commons.housekeeping.HousekeepingListener;
 import org.openjproxy.xa.pool.commons.housekeeping.LeakDetectionTask;
@@ -536,18 +537,23 @@ public class CommonsPool2XADataSource implements XADataSource {
      * </p>
      */
     private void initializeHousekeeping() {
-        if (housekeepingConfig.isLeakDetectionEnabled()) {
-            log.info("Initializing leak detection with timeout={}ms, interval={}ms, enhanced={}",
-                housekeepingConfig.getLeakTimeoutMs(),
-                housekeepingConfig.getLeakCheckIntervalMs(),
-                housekeepingConfig.isEnhancedLeakReport());
-            
+        boolean needsExecutor = housekeepingConfig.isLeakDetectionEnabled() || housekeepingConfig.isDiagnosticsEnabled();
+        
+        if (needsExecutor) {
             // Create daemon thread executor for housekeeping tasks
             housekeepingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
                 Thread t = new Thread(r, "ojp-xa-housekeeping");
                 t.setDaemon(true);
                 return t;
             });
+        }
+        
+        // Initialize leak detection if enabled
+        if (housekeepingConfig.isLeakDetectionEnabled()) {
+            log.info("Initializing leak detection with timeout={}ms, interval={}ms, enhanced={}",
+                housekeepingConfig.getLeakTimeoutMs(),
+                housekeepingConfig.getLeakCheckIntervalMs(),
+                housekeepingConfig.isEnhancedLeakReport());
             
             // Schedule leak detection task
             LeakDetectionTask leakTask = new LeakDetectionTask(
@@ -566,6 +572,26 @@ public class CommonsPool2XADataSource implements XADataSource {
             log.info("Leak detection initialized and scheduled");
         } else {
             log.info("Leak detection is disabled");
+        }
+        
+        // Initialize diagnostics if enabled
+        if (housekeepingConfig.isDiagnosticsEnabled()) {
+            log.info("Initializing pool diagnostics with interval={}ms",
+                housekeepingConfig.getDiagnosticsIntervalMs());
+            
+            // Schedule diagnostics task
+            DiagnosticsTask diagnosticsTask = new DiagnosticsTask(pool, housekeepingListener);
+            
+            housekeepingExecutor.scheduleAtFixedRate(
+                diagnosticsTask,
+                housekeepingConfig.getDiagnosticsIntervalMs(),
+                housekeepingConfig.getDiagnosticsIntervalMs(),
+                TimeUnit.MILLISECONDS
+            );
+            
+            log.info("Pool diagnostics initialized and scheduled");
+        } else {
+            log.info("Pool diagnostics is disabled");
         }
     }
     
