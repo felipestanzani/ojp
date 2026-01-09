@@ -18,3 +18,7 @@ ojp-libs/
 **/ojp-libs/*.jar
 ojp-server/target/empty-drivers/
 ojp-server/target/empty-libs/
+
+# Log files
+**/logs/*.log
+*.log

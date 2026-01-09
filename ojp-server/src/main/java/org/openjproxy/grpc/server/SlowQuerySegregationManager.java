@@ -1,6 +1,8 @@
 package org.openjproxy.grpc.server;
 
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Manages slow query segregation by combining performance monitoring with slot management.
@@ -10,6 +12,9 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 public class SlowQuerySegregationManager {
+    
+    // Workaround for Lombok compilation issue
+    private static final Logger log = LoggerFactory.getLogger(SlowQuerySegregationManager.class);
     
     private final QueryPerformanceMonitor performanceMonitor;
     private final SlotManager slotManager;

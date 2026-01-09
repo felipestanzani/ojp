@@ -35,6 +35,7 @@ public class ServerConfiguration {
     private static final String SLOW_QUERY_FAST_SLOT_TIMEOUT_KEY = "ojp.server.slowQuerySegregation.fastSlotTimeout";
     private static final String SLOW_QUERY_UPDATE_GLOBAL_AVG_INTERVAL_KEY = "ojp.server.slowQuerySegregation.updateGlobalAvgInterval";
     private static final String DRIVERS_PATH_KEY = "ojp.libs.path";
+    private static final String SQL_ENHANCER_ENABLED_KEY = "ojp.sql.enhancer.enabled";
     
 
     // Default values
@@ -58,6 +59,9 @@ public class ServerConfiguration {
     public static final long DEFAULT_SLOW_QUERY_FAST_SLOT_TIMEOUT = 60000; // 60 seconds fast slot timeout
     public static final long DEFAULT_SLOW_QUERY_UPDATE_GLOBAL_AVG_INTERVAL = 300; // 300 seconds (5 minutes) global average update interval
     public static final String DEFAULT_DRIVERS_PATH = "./ojp-libs"; // Default external libraries directory path
+    
+    // SQL Enhancer default values
+    public static final boolean DEFAULT_SQL_ENHANCER_ENABLED = false; // Disabled by default, opt-in
     
     // XA pooling default values
     public static final boolean DEFAULT_XA_POOLING_ENABLED = true; // Enable XA pooling by default
@@ -87,6 +91,7 @@ public class ServerConfiguration {
     private final long slowQueryFastSlotTimeout;
     private final long slowQueryUpdateGlobalAvgInterval;
     private final String driversPath;
+    private final boolean sqlEnhancerEnabled;
     
 
     public ServerConfiguration() {
@@ -109,6 +114,7 @@ public class ServerConfiguration {
         this.slowQueryFastSlotTimeout = getLongProperty(SLOW_QUERY_FAST_SLOT_TIMEOUT_KEY, DEFAULT_SLOW_QUERY_FAST_SLOT_TIMEOUT);
         this.slowQueryUpdateGlobalAvgInterval = getLongProperty(SLOW_QUERY_UPDATE_GLOBAL_AVG_INTERVAL_KEY, DEFAULT_SLOW_QUERY_UPDATE_GLOBAL_AVG_INTERVAL);
         this.driversPath = getStringProperty(DRIVERS_PATH_KEY, DEFAULT_DRIVERS_PATH);
+        this.sqlEnhancerEnabled = getBooleanProperty(SQL_ENHANCER_ENABLED_KEY, DEFAULT_SQL_ENHANCER_ENABLED);
         
 
         logConfigurationSummary();
@@ -209,6 +215,7 @@ public class ServerConfiguration {
         logger.info("  Slow Query Fast Slot Timeout: {} ms", slowQueryFastSlotTimeout);
         logger.info("  Slow Query Update Global Avg Interval: {} seconds", slowQueryUpdateGlobalAvgInterval);
         logger.info("  External Libraries Path: {}", driversPath);
+        logger.info("  SQL Enhancer Enabled: {}", sqlEnhancerEnabled);
     }
 
     // Getters
@@ -286,6 +293,10 @@ public class ServerConfiguration {
 
     public String getDriversPath() {
         return driversPath;
+    }
+
+    public boolean isSqlEnhancerEnabled() {
+        return sqlEnhancerEnabled;
     }
     
 }
