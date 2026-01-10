@@ -485,4 +485,70 @@ class SqlEnhancerEngineTest {
         assertTrue(result.isOptimized(), "Should be marked as optimized");
         assertTrue(result.getOptimizationTimeMs() > 0, "Should have optimization time");
     }
+    
+    // Phase 3 Part 2 tests - Metrics and Advanced Features
+    
+    @Test
+    void testOptimizationMetrics() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, null);
+        
+        // Process some queries
+        engine.enhance("SELECT * FROM users WHERE id = 1");
+        engine.enhance("SELECT * FROM orders WHERE status = 'active'");
+        engine.enhance("SELECT id, name FROM (SELECT id, name, email FROM users)");
+        
+        // Get stats
+        String stats = engine.getOptimizationStats();
+        
+        assertNotNull(stats, "Stats should not be null");
+        assertTrue(stats.contains("Processed="), "Should contain processed count");
+        assertTrue(stats.contains("Optimized="), "Should contain optimized count");
+    }
+    
+    @Test
+    void testMetrics_WhenOptimizationDisabled() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, false, null);
+        
+        engine.enhance("SELECT * FROM users WHERE id = 1");
+        
+        String stats = engine.getOptimizationStats();
+        assertEquals("Optimization disabled", stats, "Should indicate optimization is disabled");
+    }
+    
+    @Test
+    void testAggressiveRules() {
+        // Test with aggressive rules
+        List<String> aggressiveRules = Arrays.asList(
+            "FILTER_REDUCE", "PROJECT_REDUCE", 
+            "FILTER_INTO_JOIN", "JOIN_COMMUTE", "SUB_QUERY_REMOVE"
+        );
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, aggressiveRules);
+        
+        String sql = "SELECT u.id, u.name FROM users u " +
+                     "INNER JOIN orders o ON u.id = o.user_id " +
+                     "WHERE u.status = 'active'";
+        
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Should return optimized SQL");
+        assertTrue(result.isOptimized(), "Should be marked as optimized");
+        // Aggressive rules applied
+        assertTrue(result.getAppliedRules().contains("FILTER_INTO_JOIN") || 
+                   result.getAppliedRules().contains("FILTER_REDUCE"),
+                   "Should have aggressive rules in applied list");
+    }
+    
+    @Test
+    void testMetrics_TrackModifications() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, null);
+        
+        // Query that might be optimized
+        engine.enhance("SELECT id, name FROM (SELECT id, name, email FROM users)");
+        
+        String stats = engine.getOptimizationStats();
+        
+        // Should track processed and optimized queries
+        assertTrue(stats.contains("Processed=1"), "Should have processed 1 query");
+        assertTrue(stats.contains("Optimized=1"), "Should have optimized 1 query");
+    }
 }

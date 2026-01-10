@@ -76,6 +76,20 @@ public class OptimizationRuleRegistry {
     }
     
     /**
+     * Gets aggressive rules for advanced optimization.
+     * Phase 3: These rules are more aggressive and may need testing.
+     * 
+     * @return List of aggressive RelOptRule instances
+     */
+    public List<RelOptRule> getAggressiveRules() {
+        return getRulesByNames(Arrays.asList(
+            "FILTER_INTO_JOIN",
+            "JOIN_COMMUTE",
+            "SUB_QUERY_REMOVE"
+        ));
+    }
+    
+    /**
      * Gets all available rules.
      * 
      * @return List of all RelOptRule instances

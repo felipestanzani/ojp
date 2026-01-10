@@ -36,6 +36,12 @@ public class SqlEnhancerEngine {
     private final OptimizationRuleRegistry ruleRegistry;
     private final List<String> enabledRules;
     
+    // Phase 3: Metrics tracking
+    private long totalQueriesProcessed = 0;
+    private long totalQueriesOptimized = 0;
+    private long totalOptimizationTimeMs = 0;
+    private long totalQueriesModified = 0;
+    
     
     /**
      * Creates a new SqlEnhancerEngine with the given enabled status and dialect.
@@ -164,6 +170,33 @@ public class SqlEnhancerEngine {
     }
     
     /**
+     * Gets optimization statistics.
+     * Phase 3: Provides metrics about query optimization.
+     * 
+     * @return String describing optimization statistics
+     */
+    public String getOptimizationStats() {
+        if (!optimizationEnabled) {
+            return "Optimization disabled";
+        }
+        
+        long avgOptimizationTime = totalQueriesOptimized > 0 ? 
+            totalOptimizationTimeMs / totalQueriesOptimized : 0;
+        
+        double optimizationRate = totalQueriesProcessed > 0 ? 
+            (100.0 * totalQueriesOptimized / totalQueriesProcessed) : 0.0;
+        
+        double modificationRate = totalQueriesOptimized > 0 ? 
+            (100.0 * totalQueriesModified / totalQueriesOptimized) : 0.0;
+        
+        return String.format(
+            "Optimization Stats: Processed=%d, Optimized=%d (%.1f%%), Modified=%d (%.1f%%), AvgTime=%dms",
+            totalQueriesProcessed, totalQueriesOptimized, optimizationRate,
+            totalQueriesModified, modificationRate, avgOptimizationTime
+        );
+    }
+    
+    /**
      * Clears the cache.
      */
     public void clearCache() {
@@ -194,6 +227,11 @@ public class SqlEnhancerEngine {
         if (cached != null) {
             log.debug("Cache hit for SQL (dialect: {}): {}", dialect, sql.substring(0, Math.min(sql.length(), 50)));
             return cached;
+        }
+        
+        // Phase 3: Track metrics
+        synchronized (this) {
+            totalQueriesProcessed++;
         }
         
         long startTime = System.currentTimeMillis();
@@ -236,6 +274,15 @@ public class SqlEnhancerEngine {
                                 
                                 // Check if SQL was actually modified
                                 boolean wasModified = !sql.trim().equalsIgnoreCase(optimizedSql.trim());
+                                
+                                // Phase 3: Track metrics
+                                synchronized (this) {
+                                    totalQueriesOptimized++;
+                                    totalOptimizationTimeMs += optimizationTime;
+                                    if (wasModified) {
+                                        totalQueriesModified++;
+                                    }
+                                }
                                 
                                 if (wasModified) {
                                     log.info("SQL optimized with {} rules in {}ms. Original length: {}, Optimized length: {}", 
