@@ -2,6 +2,10 @@ package org.openjproxy.grpc.server.sql;
 
 import lombok.extern.slf4j.Slf4j;
 import org.junit.jupiter.api.Test;
+
+import java.util.Arrays;
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -347,5 +351,95 @@ class SqlEnhancerEngineTest {
         
         // Should fallback to original SQL (pass-through mode)
         assertNotNull(result.getEnhancedSql(), "Should return some SQL");
+    }
+    
+    // Phase 2 tests - Optimization
+    
+    @Test
+    void testOptimizationEnabled_SimpleQuery() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, null);
+        
+        String sql = "SELECT * FROM users WHERE id = 1";
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Enhanced SQL should not be null");
+        assertFalse(result.isHasErrors(), "Should not have errors for valid SQL");
+        assertTrue(result.isOptimized(), "Should be marked as optimized");
+        assertNotNull(result.getAppliedRules(), "Applied rules list should not be null");
+        assertTrue(result.getOptimizationTimeMs() >= 0, "Optimization time should be non-negative");
+    }
+    
+    @Test
+    void testOptimizationEnabled_WithSpecificRules() {
+        List<String> rules = Arrays.asList("FILTER_REDUCE", "PROJECT_REDUCE");
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, rules);
+        
+        String sql = "SELECT id, name FROM users WHERE status = 'active'";
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Enhanced SQL should not be null");
+        assertTrue(result.isOptimized(), "Should be marked as optimized");
+        assertEquals(rules, result.getAppliedRules(), "Applied rules should match configured rules");
+    }
+    
+    @Test
+    void testOptimizationEnabled_ComplexJoin() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, null);
+        
+        String sql = "SELECT u.id, u.name, o.order_id " +
+                     "FROM users u " +
+                     "INNER JOIN orders o ON u.id = o.user_id " +
+                     "WHERE u.status = 'active'";
+        
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Complex SQL should optimize successfully");
+        assertFalse(result.isHasErrors(), "Should not have errors for valid complex SQL");
+        assertTrue(result.isOptimized(), "Should be marked as optimized");
+    }
+    
+    @Test
+    void testOptimizationDisabled() {
+        // Conversion enabled, but optimization disabled
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, false, null);
+        
+        String sql = "SELECT * FROM users WHERE id = 1";
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Enhanced SQL should not be null");
+        assertFalse(result.isOptimized(), "Should NOT be marked as optimized");
+        assertEquals(0, result.getOptimizationTimeMs(), "Optimization time should be 0");
+        assertTrue(result.getAppliedRules().isEmpty(), "Applied rules should be empty");
+    }
+    
+    @Test
+    void testOptimizationEnabled_WithCache() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, null);
+        
+        String sql = "SELECT * FROM users WHERE id = 1";
+        
+        // First call - should optimize and cache
+        SqlEnhancementResult result1 = engine.enhance(sql);
+        
+        // Second call - should hit cache
+        SqlEnhancementResult result2 = engine.enhance(sql);
+        
+        assertEquals(result1.getEnhancedSql(), result2.getEnhancedSql(), 
+                    "Cached result should match");
+        assertEquals(result1.isOptimized(), result2.isOptimized(), 
+                    "Optimization status should match in cache");
+    }
+    
+    @Test
+    void testOptimizationEnabled_ErrorHandling() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true, true, null);
+        
+        // Invalid SQL that should fail optimization but not break the system
+        String sql = "SELECT * FROM WHERE";
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        // Should fallback to original SQL (pass-through mode)
+        assertNotNull(result.getEnhancedSql(), "Should return some SQL");
+        assertFalse(result.isOptimized(), "Invalid SQL should not be optimized");
     }
 }

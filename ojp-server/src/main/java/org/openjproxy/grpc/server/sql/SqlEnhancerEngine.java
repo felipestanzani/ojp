@@ -1,21 +1,24 @@
 package org.openjproxy.grpc.server.sql;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.calcite.plan.RelOptRule;
 import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
 import org.apache.calcite.sql.validate.SqlConformanceEnum;
 
+import java.util.Arrays;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * SQL Enhancer Engine that uses Apache Calcite for SQL parsing, validation, and optimization.
  * 
  * Phase 1: Basic integration with SQL parsing and relational algebra conversion
- * Phase 2: Add validation and optimization with caching (uses original SQL as cache keys)
+ * Phase 2: Rule-based optimization with HepPlanner
  * Phase 3: Add database-specific dialect support and custom functions
- * Phase 4: Full query optimization with rule-based transformations
+ * Phase 4: Full query optimization with advanced rules
  */
 @Slf4j
 public class SqlEnhancerEngine {
@@ -28,17 +31,27 @@ public class SqlEnhancerEngine {
     private final RelationalAlgebraConverter converter;
     private final boolean conversionEnabled;
     
+    // Phase 2: Optimization configuration
+    private final boolean optimizationEnabled;
+    private final OptimizationRuleRegistry ruleRegistry;
+    private final List<String> enabledRules;
+    
     
     /**
      * Creates a new SqlEnhancerEngine with the given enabled status and dialect.
+     * Phase 2: Added optimization support.
      * 
      * @param enabled Whether the SQL enhancer is enabled
      * @param dialectName The SQL dialect to use
-     * @param conversionEnabled Whether to enable SQL-to-RelNode-to-SQL conversion (Phase 1)
+     * @param conversionEnabled Whether to enable SQL-to-RelNode conversion (Phase 1)
+     * @param optimizationEnabled Whether to enable query optimization (Phase 2)
+     * @param enabledRules List of rule names to enable (null = use safe rules)
      */
-    public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled) {
+    public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled,
+                             boolean optimizationEnabled, List<String> enabledRules) {
         this.enabled = enabled;
         this.conversionEnabled = conversionEnabled;
+        this.optimizationEnabled = optimizationEnabled;
         this.cache = new ConcurrentHashMap<>();
         this.dialect = OjpSqlDialect.fromString(dialectName);
         this.calciteDialect = dialect.getCalciteDialect();
@@ -57,13 +70,31 @@ public class SqlEnhancerEngine {
         this.converter = conversionEnabled ? 
             new RelationalAlgebraConverter(parserConfig) : null;
         
+        // Phase 2: Initialize optimization components
+        this.ruleRegistry = new OptimizationRuleRegistry();
+        this.enabledRules = enabledRules != null ? enabledRules : 
+            Arrays.asList("FILTER_REDUCE", "PROJECT_REDUCE", "FILTER_MERGE", "PROJECT_MERGE", "PROJECT_REMOVE");
+        
         if (enabled) {
             String conversionStatus = conversionEnabled ? " with relational algebra conversion" : "";
-            log.info("SQL Enhancer Engine initialized and enabled with dialect: {}{}", 
-                    dialectName, conversionStatus);
+            String optimizationStatus = optimizationEnabled ? " and optimization" : "";
+            log.info("SQL Enhancer Engine initialized and enabled with dialect: {}{}{}", 
+                    dialectName, conversionStatus, optimizationStatus);
         } else {
             log.info("SQL Enhancer Engine initialized but disabled");
         }
+    }
+    
+    /**
+     * Creates a new SqlEnhancerEngine with the given enabled status and dialect.
+     * Conversion is disabled by default for backward compatibility.
+     * 
+     * @param enabled Whether the SQL enhancer is enabled
+     * @param dialectName The SQL dialect to use
+     * @param conversionEnabled Whether to enable SQL-to-RelNode-to-SQL conversion (Phase 1)
+     */
+    public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled) {
+        this(enabled, dialectName, conversionEnabled, false, null);
     }
     
     /**
@@ -176,23 +207,52 @@ public class SqlEnhancerEngine {
             log.debug("Successfully parsed and validated SQL with {} dialect: {}", 
                      dialect, sql.substring(0, Math.min(sql.length(), 100)));
             
-            // Phase 1: Relational Algebra Conversion (if enabled)
+            // Phase 1 & 2: Relational Algebra Conversion and Optimization (if enabled)
             if (conversionEnabled && converter != null) {
                 try {
-                    // Convert SQL → RelNode for validation
-                    // Phase 1: Just validates conversion works, returns original SQL
-                    RelNode relNode = converter.convertToRelNode(sqlNode);
-                    log.debug("Successfully converted SQL to RelNode (Phase 1 validation)");
+                    long optimizationStartTime = System.currentTimeMillis();
                     
-                    // Phase 1: Return original SQL (not converted)
-                    // Phase 2 will use optimized/converted SQL
-                    result = SqlEnhancementResult.success(sql, false);
+                    // Convert SQL → RelNode
+                    RelNode relNode = converter.convertToRelNode(sqlNode);
+                    log.debug("Successfully converted SQL to RelNode");
+                    
+                    // Phase 2: Apply optimization if enabled
+                    if (optimizationEnabled) {
+                        try {
+                            // Get optimization rules
+                            List<RelOptRule> rules = ruleRegistry.getRulesByNames(enabledRules);
+                            log.debug("Applying {} optimization rules", rules.size());
+                            
+                            // Apply optimizations
+                            RelNode optimizedNode = converter.applyOptimizations(relNode, rules);
+                            
+                            long optimizationEndTime = System.currentTimeMillis();
+                            long optimizationTime = optimizationEndTime - optimizationStartTime;
+                            
+                            // Phase 2: For now, return original SQL with optimization metadata
+                            // Full SQL generation will be added in future enhancement
+                            boolean wasModified = false; // Will be true when we generate optimized SQL
+                            
+                            result = SqlEnhancementResult.optimized(sql, wasModified, 
+                                                                   enabledRules, optimizationTime);
+                            
+                            log.debug("Optimization complete in {}ms with {} rules", 
+                                     optimizationTime, rules.size());
+                            
+                        } catch (RelationalAlgebraConverter.OptimizationException e) {
+                            log.debug("Optimization failed, using original SQL: {}", e.getMessage());
+                            result = SqlEnhancementResult.success(sql, false);
+                        }
+                    } else {
+                        // Optimization not enabled, return original SQL
+                        result = SqlEnhancementResult.success(sql, false);
+                    }
                     
                 } catch (RelationalAlgebraConverter.ConversionException e) {
                     log.debug("Conversion failed, falling back to original SQL: {}", e.getMessage());
                     result = SqlEnhancementResult.success(sql, false);
                 } catch (Exception e) {
-                    log.warn("Unexpected error during conversion, falling back to original SQL: {}", 
+                    log.warn("Unexpected error during conversion/optimization, falling back to original SQL: {}", 
                             e.getMessage());
                     result = SqlEnhancementResult.success(sql, false);
                 }
