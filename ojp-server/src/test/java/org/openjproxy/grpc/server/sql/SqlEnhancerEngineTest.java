@@ -9,7 +9,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
- * Tests for SqlEnhancerEngine - Phases 1, 2, and 3
+ * Tests for SqlEnhancerEngine with query optimization capabilities.
+ * Tests validation, caching, optimization, and SQL generation.
  */
 @Slf4j
 class SqlEnhancerEngineTest {
@@ -48,7 +49,7 @@ class SqlEnhancerEngineTest {
         String sql = "SELECT * FROM WHERE";
         SqlEnhancementResult result = engine.enhance(sql);
         
-        // Phase 2: Invalid SQL should pass through (no errors thrown)
+        // Invalid SQL should pass through (no errors thrown)
         assertEquals(sql, result.getEnhancedSql(), "Invalid SQL should pass through");
         assertFalse(result.isModified(), "SQL should not be modified");
         assertFalse(result.isHasErrors(), "Should not mark as error in pass-through mode");
@@ -80,7 +81,7 @@ class SqlEnhancerEngineTest {
         assertFalse(result.isHasErrors(), "Should not have errors for prepared statement");
     }
     
-    // Phase 2 tests
+    // Optimization tests
     
     @Test
     void testCaching() {
@@ -159,7 +160,7 @@ class SqlEnhancerEngineTest {
         assertFalse(result.isHasErrors(), "Valid SQL should not have errors");
     }
     
-    // Phase 3 tests
+    // Dialect tests
     
     @Test
     void testDialectConfiguration_PostgreSQL() {
@@ -224,7 +225,7 @@ class SqlEnhancerEngineTest {
         assertEquals(OjpSqlDialect.GENERIC, engine.getDialect(), "Should default to generic dialect");
     }
     
-    // Phase 3 dialect translation tests disabled due to known Guava compatibility issue with Calcite
+    // Dialect translation tests disabled due to known Guava compatibility issue with Calcite
     // The translateDialect feature works in principle but hits Guava version conflicts
     // This is a known issue with Apache Calcite and Guava dependencies
     
@@ -283,7 +284,7 @@ class SqlEnhancerEngineTest {
         assertTrue(cacheStats.contains("1"), "Cache should have 1 entry");
     }
     
-    // Phase 1 tests - Relational Algebra Conversion
+    // Relational Algebra Conversion tests
     
     @Test
     void testConversionEnabled_SimpleQuery() {
@@ -294,8 +295,8 @@ class SqlEnhancerEngineTest {
         
         assertNotNull(result.getEnhancedSql(), "Enhanced SQL should not be null");
         assertFalse(result.isHasErrors(), "Should not have errors for valid SQL");
-        // Phase 1: Returns original SQL, just validates conversion works
-        assertEquals(sql, result.getEnhancedSql(), "Phase 1 returns original SQL");
+        // Returns original SQL after validating conversion works
+        assertEquals(sql, result.getEnhancedSql(), "Conversion test returns original SQL");
     }
     
     @Test
@@ -353,7 +354,7 @@ class SqlEnhancerEngineTest {
         assertNotNull(result.getEnhancedSql(), "Should return some SQL");
     }
     
-    // Phase 2 tests - Optimization
+    // Optimization tests - Optimization
     
     @Test
     void testOptimizationEnabled_SimpleQuery() {
@@ -443,7 +444,7 @@ class SqlEnhancerEngineTest {
         assertFalse(result.isOptimized(), "Invalid SQL should not be optimized");
     }
     
-    // Phase 3 tests - SQL Generation
+    // Dialect tests - SQL Generation
     
     @Test
     void testSqlGeneration_SimpleQuery() {
@@ -480,13 +481,13 @@ class SqlEnhancerEngineTest {
         String sql = "SELECT * FROM users WHERE id = 1";
         SqlEnhancementResult result = engine.enhance(sql);
         
-        // Phase 3: Now returns actual SQL (might be optimized or original)
+        // Now returns actual SQL (might be optimized or original)
         assertNotNull(result.getEnhancedSql(), "Should return SQL");
         assertTrue(result.isOptimized(), "Should be marked as optimized");
         assertTrue(result.getOptimizationTimeMs() > 0, "Should have optimization time");
     }
     
-    // Phase 3 Part 2 tests - Metrics and Advanced Features
+    // Metrics and advanced features tests
     
     @Test
     void testOptimizationMetrics() {

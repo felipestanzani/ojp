@@ -15,10 +15,12 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * SQL Enhancer Engine that uses Apache Calcite for SQL parsing, validation, and optimization.
  * 
- * Phase 1: Basic integration with SQL parsing and relational algebra conversion
- * Phase 2: Rule-based optimization with HepPlanner
- * Phase 3: Add database-specific dialect support and custom functions
- * Phase 4: Full query optimization with advanced rules
+ * Features:
+ * - SQL syntax validation and parsing
+ * - Query optimization using rule-based transformations
+ * - SQL rewriting for improved performance
+ * - Comprehensive caching for fast repeated queries
+ * - Metrics tracking for monitoring
  */
 @Slf4j
 public class SqlEnhancerEngine {
@@ -31,12 +33,12 @@ public class SqlEnhancerEngine {
     private final RelationalAlgebraConverter converter;
     private final boolean conversionEnabled;
     
-    // Phase 2: Optimization configuration
+    // Optimization configuration
     private final boolean optimizationEnabled;
     private final OptimizationRuleRegistry ruleRegistry;
     private final List<String> enabledRules;
     
-    // Phase 3: Metrics tracking
+    // Metrics tracking
     private long totalQueriesProcessed = 0;
     private long totalQueriesOptimized = 0;
     private long totalOptimizationTimeMs = 0;
@@ -44,13 +46,12 @@ public class SqlEnhancerEngine {
     
     
     /**
-     * Creates a new SqlEnhancerEngine with the given enabled status and dialect.
-     * Phase 2: Added optimization support.
+     * Creates a new SqlEnhancerEngine with full configuration options.
      * 
      * @param enabled Whether the SQL enhancer is enabled
      * @param dialectName The SQL dialect to use
-     * @param conversionEnabled Whether to enable SQL-to-RelNode conversion (Phase 1)
-     * @param optimizationEnabled Whether to enable query optimization (Phase 2)
+     * @param conversionEnabled Whether to enable SQL-to-RelNode conversion
+     * @param optimizationEnabled Whether to enable query optimization
      * @param enabledRules List of rule names to enable (null = use safe rules)
      */
     public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled,
@@ -62,7 +63,7 @@ public class SqlEnhancerEngine {
         this.dialect = OjpSqlDialect.fromString(dialectName);
         this.calciteDialect = dialect.getCalciteDialect();
         
-        // Phase 3: Configure parser with dialect-specific settings
+        // Configure parser with dialect-specific settings
         SqlParser.Config baseConfig = SqlParser.config();
         
         // Configure conformance based on dialect
@@ -73,11 +74,11 @@ public class SqlEnhancerEngine {
             .withCaseSensitive(false); // Most SQL is case-insensitive
         
         // Initialize converter if conversion is enabled
-        // Phase 3: Pass SqlDialect for SQL generation
+        // Pass SqlDialect for SQL generation
         this.converter = conversionEnabled ? 
             new RelationalAlgebraConverter(parserConfig, calciteDialect) : null;
         
-        // Phase 2: Initialize optimization components
+        // Initialize optimization components
         this.ruleRegistry = new OptimizationRuleRegistry();
         this.enabledRules = enabledRules != null ? enabledRules : 
             Arrays.asList("FILTER_REDUCE", "PROJECT_REDUCE", "FILTER_MERGE", "PROJECT_MERGE", "PROJECT_REMOVE");
@@ -93,12 +94,12 @@ public class SqlEnhancerEngine {
     }
     
     /**
-     * Creates a new SqlEnhancerEngine with the given enabled status and dialect.
-     * Conversion is disabled by default for backward compatibility.
+     * Creates a new SqlEnhancerEngine with conversion enabled.
+     * Optimization is disabled by default for backward compatibility.
      * 
      * @param enabled Whether the SQL enhancer is enabled
      * @param dialectName The SQL dialect to use
-     * @param conversionEnabled Whether to enable SQL-to-RelNode-to-SQL conversion (Phase 1)
+     * @param conversionEnabled Whether to enable SQL-to-RelNode conversion
      */
     public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled) {
         this(enabled, dialectName, conversionEnabled, false, null);
@@ -171,7 +172,6 @@ public class SqlEnhancerEngine {
     
     /**
      * Gets optimization statistics.
-     * Phase 3: Provides metrics about query optimization.
      * 
      * @return String describing optimization statistics
      */
@@ -229,7 +229,7 @@ public class SqlEnhancerEngine {
             return cached;
         }
         
-        // Phase 3: Track metrics
+        // Track metrics
         synchronized (this) {
             totalQueriesProcessed++;
         }
@@ -238,7 +238,7 @@ public class SqlEnhancerEngine {
         SqlEnhancementResult result;
         
         try {
-            // Phase 3: Parse and validate SQL with dialect-specific configuration
+            // Parse and validate SQL with dialect-specific configuration
             SqlParser parser = SqlParser.create(sql, parserConfig);
             SqlNode sqlNode = parser.parseQuery();
             
@@ -246,7 +246,7 @@ public class SqlEnhancerEngine {
             log.debug("Successfully parsed and validated SQL with {} dialect: {}", 
                      dialect, sql.substring(0, Math.min(sql.length(), 100)));
             
-            // Phase 1 & 2: Relational Algebra Conversion and Optimization (if enabled)
+            // Relational Algebra Conversion and Optimization (if enabled)
             if (conversionEnabled && converter != null) {
                 try {
                     long optimizationStartTime = System.currentTimeMillis();
@@ -255,7 +255,7 @@ public class SqlEnhancerEngine {
                     RelNode relNode = converter.convertToRelNode(sqlNode);
                     log.debug("Successfully converted SQL to RelNode");
                     
-                    // Phase 2 & 3: Apply optimization if enabled
+                    // Apply optimization if enabled
                     if (optimizationEnabled) {
                         try {
                             // Get optimization rules
@@ -265,7 +265,7 @@ public class SqlEnhancerEngine {
                             // Apply optimizations
                             RelNode optimizedNode = converter.applyOptimizations(relNode, rules);
                             
-                            // Phase 3: Generate SQL from optimized RelNode
+                            // Generate SQL from optimized RelNode
                             try {
                                 String optimizedSql = converter.convertToSql(optimizedNode);
                                 
@@ -275,7 +275,7 @@ public class SqlEnhancerEngine {
                                 // Check if SQL was actually modified
                                 boolean wasModified = !sql.trim().equalsIgnoreCase(optimizedSql.trim());
                                 
-                                // Phase 3: Track metrics
+                                // Track metrics
                                 synchronized (this) {
                                     totalQueriesOptimized++;
                                     totalOptimizationTimeMs += optimizationTime;
@@ -331,7 +331,7 @@ public class SqlEnhancerEngine {
             log.debug("SQL parse error with {} dialect: {} for SQL: {}", 
                      dialect, e.getMessage(), sql.substring(0, Math.min(sql.length(), 100)));
             
-            // Phase 3: On parse error, return original SQL (pass-through mode)
+            // On parse error, return original SQL (pass-through mode)
             result = SqlEnhancementResult.passthrough(sql);
         } catch (Exception e) {
             // Catch any unexpected errors

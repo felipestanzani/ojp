@@ -20,12 +20,8 @@ import java.util.List;
 
 /**
  * Converts between SQL and Relational Algebra (RelNode) representations.
- * 
- * Phase 1: Basic conversion pipeline - SQL → RelNode → validate round-trip works
- * Phase 2: Add optimization using HepPlanner and rule-based transformations
- * Phase 3: Add SQL generation from optimized RelNode
- * 
- * This class handles the conversion, optimization, and SQL generation.
+ * Handles SQL parsing, optimization using Apache Calcite's HepPlanner,
+ * and SQL generation from optimized relational algebra.
  */
 @Slf4j
 public class RelationalAlgebraConverter {
@@ -46,9 +42,7 @@ public class RelationalAlgebraConverter {
     
     /**
      * Converts a parsed SQL node to relational algebra.
-     * 
-     * Phase 1: This validates that the SQL can be converted to RelNode.
-     * Phase 2: The RelNode is used for optimization.
+     * The RelNode can then be optimized and converted back to SQL.
      * 
      * @param sqlNode The parsed SQL node
      * @return RelNode representing the relational algebra
@@ -91,8 +85,7 @@ public class RelationalAlgebraConverter {
     }
     
     /**
-     * Applies optimization rules to a RelNode using HepPlanner.
-     * Phase 2: Implements rule-based query optimization.
+     * Applies optimization rules to a RelNode using Apache Calcite's HepPlanner.
      * 
      * @param relNode The relational algebra node to optimize
      * @param rules List of optimization rules to apply
@@ -129,7 +122,6 @@ public class RelationalAlgebraConverter {
     
     /**
      * Converts an optimized RelNode back to SQL string.
-     * Phase 3: Implements SQL generation from relational algebra.
      * 
      * @param relNode The relational algebra node to convert
      * @return SQL string representation

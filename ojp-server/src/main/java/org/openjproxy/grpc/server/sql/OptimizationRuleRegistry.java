@@ -6,10 +6,8 @@ import org.apache.calcite.rel.rules.CoreRules;
 import java.util.*;
 
 /**
- * Registry of available optimization rules.
- * Allows configuration of which rules to apply.
- * 
- * Phase 2: Provides safe optimization rules for query rewriting.
+ * Registry of available optimization rules for SQL query rewriting.
+ * Provides both safe and aggressive optimization rules using Apache Calcite.
  */
 public class OptimizationRuleRegistry {
     
@@ -19,19 +17,16 @@ public class OptimizationRuleRegistry {
      * Creates a new registry with all available optimization rules.
      */
     public OptimizationRuleRegistry() {
-        // Register safe optimization rules (Phase 2)
+        // Register safe optimization rules
         registerRule("FILTER_REDUCE", CoreRules.FILTER_REDUCE_EXPRESSIONS);
         registerRule("PROJECT_REDUCE", CoreRules.PROJECT_REDUCE_EXPRESSIONS);
         registerRule("FILTER_MERGE", CoreRules.FILTER_MERGE);
         registerRule("PROJECT_MERGE", CoreRules.PROJECT_MERGE);
         registerRule("PROJECT_REMOVE", CoreRules.PROJECT_REMOVE);
         
-        // Register aggressive optimization rules (Phase 3)
+        // Register aggressive optimization rules
         registerRule("FILTER_INTO_JOIN", CoreRules.FILTER_INTO_JOIN);
         registerRule("JOIN_COMMUTE", CoreRules.JOIN_COMMUTE);
-        // Note: SUB_QUERY_REMOVE not available in Calcite 1.37.0
-        // Available alternatives: PROJECT_SUB_QUERY_TO_CORRELATE, FILTER_SUB_QUERY_TO_CORRELATE
-        // registerRule("SUB_QUERY_REMOVE", CoreRules.SUB_QUERY_REMOVE);
     }
     
     /**
@@ -79,7 +74,7 @@ public class OptimizationRuleRegistry {
     
     /**
      * Gets aggressive rules for advanced optimization.
-     * Phase 3: These rules are more aggressive and may need testing.
+     * These rules perform more complex transformations like predicate pushdown and join reordering.
      * 
      * @return List of aggressive RelOptRule instances
      */
@@ -87,7 +82,6 @@ public class OptimizationRuleRegistry {
         return getRulesByNames(Arrays.asList(
             "FILTER_INTO_JOIN",
             "JOIN_COMMUTE"
-            // Note: SUB_QUERY_REMOVE not available in Calcite 1.37.0
         ));
     }
     
