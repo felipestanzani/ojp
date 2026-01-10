@@ -1,6 +1,7 @@
 package org.openjproxy.grpc.server.sql;
 
 import lombok.extern.slf4j.Slf4j;
+import org.apache.calcite.rel.RelNode;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.parser.SqlParseException;
 import org.apache.calcite.sql.parser.SqlParser;
@@ -11,9 +12,10 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * SQL Enhancer Engine that uses Apache Calcite for SQL parsing, validation, and optimization.
  * 
- * Phase 1: Basic integration with SQL parsing only
+ * Phase 1: Basic integration with SQL parsing and relational algebra conversion
  * Phase 2: Add validation and optimization with caching (uses original SQL as cache keys)
  * Phase 3: Add database-specific dialect support and custom functions
+ * Phase 4: Full query optimization with rule-based transformations
  */
 @Slf4j
 public class SqlEnhancerEngine {
@@ -23,6 +25,8 @@ public class SqlEnhancerEngine {
     private final ConcurrentHashMap<String, SqlEnhancementResult> cache;
     private final OjpSqlDialect dialect;
     private final org.apache.calcite.sql.SqlDialect calciteDialect;
+    private final RelationalAlgebraConverter converter;
+    private final boolean conversionEnabled;
     
     
     /**
@@ -30,9 +34,11 @@ public class SqlEnhancerEngine {
      * 
      * @param enabled Whether the SQL enhancer is enabled
      * @param dialectName The SQL dialect to use
+     * @param conversionEnabled Whether to enable SQL-to-RelNode-to-SQL conversion (Phase 1)
      */
-    public SqlEnhancerEngine(boolean enabled, String dialectName) {
+    public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled) {
         this.enabled = enabled;
+        this.conversionEnabled = conversionEnabled;
         this.cache = new ConcurrentHashMap<>();
         this.dialect = OjpSqlDialect.fromString(dialectName);
         this.calciteDialect = dialect.getCalciteDialect();
@@ -47,11 +53,28 @@ public class SqlEnhancerEngine {
             .withConformance(conformance)
             .withCaseSensitive(false); // Most SQL is case-insensitive
         
+        // Initialize converter if conversion is enabled
+        this.converter = conversionEnabled ? 
+            new RelationalAlgebraConverter(parserConfig) : null;
+        
         if (enabled) {
-            log.info("SQL Enhancer Engine initialized and enabled with dialect: {} (validation and caching)", dialectName);
+            String conversionStatus = conversionEnabled ? " with relational algebra conversion" : "";
+            log.info("SQL Enhancer Engine initialized and enabled with dialect: {}{}", 
+                    dialectName, conversionStatus);
         } else {
             log.info("SQL Enhancer Engine initialized but disabled");
         }
+    }
+    
+    /**
+     * Creates a new SqlEnhancerEngine with the given enabled status and dialect.
+     * Conversion is disabled by default for backward compatibility.
+     * 
+     * @param enabled Whether the SQL enhancer is enabled
+     * @param dialectName The SQL dialect to use
+     */
+    public SqlEnhancerEngine(boolean enabled, String dialectName) {
+        this(enabled, dialectName, false);
     }
     
     /**
@@ -153,8 +176,30 @@ public class SqlEnhancerEngine {
             log.debug("Successfully parsed and validated SQL with {} dialect: {}", 
                      dialect, sql.substring(0, Math.min(sql.length(), 100)));
             
-            // Phase 3: Return original SQL (full optimization in future enhancement)
-            result = SqlEnhancementResult.success(sql, false);
+            // Phase 1: Relational Algebra Conversion (if enabled)
+            if (conversionEnabled && converter != null) {
+                try {
+                    // Convert SQL → RelNode for validation
+                    // Phase 1: Just validates conversion works, returns original SQL
+                    RelNode relNode = converter.convertToRelNode(sqlNode);
+                    log.debug("Successfully converted SQL to RelNode (Phase 1 validation)");
+                    
+                    // Phase 1: Return original SQL (not converted)
+                    // Phase 2 will use optimized/converted SQL
+                    result = SqlEnhancementResult.success(sql, false);
+                    
+                } catch (RelationalAlgebraConverter.ConversionException e) {
+                    log.debug("Conversion failed, falling back to original SQL: {}", e.getMessage());
+                    result = SqlEnhancementResult.success(sql, false);
+                } catch (Exception e) {
+                    log.warn("Unexpected error during conversion, falling back to original SQL: {}", 
+                            e.getMessage());
+                    result = SqlEnhancementResult.success(sql, false);
+                }
+            } else {
+                // Conversion not enabled, return original SQL
+                result = SqlEnhancementResult.success(sql, false);
+            }
             
         } catch (SqlParseException e) {
             // Log parse errors with dialect info

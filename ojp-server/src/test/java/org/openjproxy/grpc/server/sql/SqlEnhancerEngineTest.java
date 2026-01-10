@@ -278,4 +278,74 @@ class SqlEnhancerEngineTest {
         String cacheStats = engine.getCacheStats();
         assertTrue(cacheStats.contains("1"), "Cache should have 1 entry");
     }
+    
+    // Phase 1 tests - Relational Algebra Conversion
+    
+    @Test
+    void testConversionEnabled_SimpleQuery() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true);
+        
+        String sql = "SELECT * FROM users WHERE id = 1";
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Enhanced SQL should not be null");
+        assertFalse(result.isHasErrors(), "Should not have errors for valid SQL");
+        // Phase 1: Returns original SQL, just validates conversion works
+        assertEquals(sql, result.getEnhancedSql(), "Phase 1 returns original SQL");
+    }
+    
+    @Test
+    void testConversionEnabled_ComplexJoin() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true);
+        
+        String sql = "SELECT u.id, u.name, o.order_id " +
+                     "FROM users u " +
+                     "INNER JOIN orders o ON u.id = o.user_id " +
+                     "WHERE u.status = 'active'";
+        
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Enhanced SQL should not be null");
+        assertFalse(result.isHasErrors(), "Should not have errors for valid complex SQL");
+    }
+    
+    @Test
+    void testConversionEnabled_WithCache() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true);
+        
+        String sql = "SELECT * FROM users WHERE id = 1";
+        
+        // First call - should convert and cache
+        SqlEnhancementResult result1 = engine.enhance(sql);
+        
+        // Second call - should hit cache
+        SqlEnhancementResult result2 = engine.enhance(sql);
+        
+        assertEquals(result1.getEnhancedSql(), result2.getEnhancedSql(), 
+                    "Cached result should match");
+    }
+    
+    @Test
+    void testConversionDisabled_DefaultBehavior() {
+        // Default constructor should have conversion disabled
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC");
+        
+        String sql = "SELECT * FROM users WHERE id = 1";
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        assertNotNull(result.getEnhancedSql(), "Enhanced SQL should not be null");
+        assertEquals(sql, result.getEnhancedSql(), "Should return original SQL");
+    }
+    
+    @Test
+    void testConversionEnabled_ErrorHandling() {
+        SqlEnhancerEngine engine = new SqlEnhancerEngine(true, "GENERIC", true);
+        
+        // Invalid SQL that should fail conversion but not break the system
+        String sql = "SELECT * FROM WHERE";
+        SqlEnhancementResult result = engine.enhance(sql);
+        
+        // Should fallback to original SQL (pass-through mode)
+        assertNotNull(result.getEnhancedSql(), "Should return some SQL");
+    }
 }
