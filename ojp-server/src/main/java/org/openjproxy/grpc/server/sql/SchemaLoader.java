@@ -21,7 +21,7 @@ import java.util.concurrent.ForkJoinPool;
 public class SchemaLoader {
     
     private final Executor executor;
-    private final long timeoutSeconds; // TODO: Implement timeout handling for async schema loading
+    private final long timeoutSeconds;
     private final RelDataTypeFactory typeFactory;
     
     /**
@@ -44,7 +44,7 @@ public class SchemaLoader {
     }
     
     /**
-     * Asynchronously loads schema metadata from a DataSource.
+     * Asynchronously loads schema metadata from a DataSource with timeout.
      * 
      * @param dataSource The data source to load schema from
      * @param catalogName Catalog name (may be null)
@@ -61,7 +61,14 @@ public class SchemaLoader {
                 log.error("Failed to load schema asynchronously", e);
                 throw new RuntimeException("Failed to load schema", e);
             }
-        }, executor);
+        }, executor)
+        .orTimeout(timeoutSeconds, java.util.concurrent.TimeUnit.SECONDS)
+        .exceptionally(ex -> {
+            if (ex instanceof java.util.concurrent.TimeoutException) {
+                log.warn("Schema loading timed out after {} seconds", timeoutSeconds);
+            }
+            throw new RuntimeException("Failed to load schema", ex);
+        });
     }
     
     /**
