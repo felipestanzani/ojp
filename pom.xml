@@ -30,6 +30,8 @@
         <slf4j.version>2.0.17</slf4j.version>
         <logback.version>1.5.19</logback.version>
         <protobuf.version>3.25.8</protobuf.version>
+        <netty.version>4.1.130.Final</netty.version>
+        <commons-lang3.version>3.18.0</commons-lang3.version>
     </properties>
 
     <dependencyManagement>
@@ -39,6 +41,22 @@
                 <groupId>com.google.protobuf</groupId>
                 <artifactId>protobuf-java</artifactId>
                 <version>${protobuf.version}</version>
+            </dependency>
+            
+            <!-- Force Netty version to fix CVE-2025-67735, CVE-2025-58057, CVE-2025-58056, CVE-2025-55163, CVE-2025-25193, CVE-2024-47535, CVE-2025-24970 -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            
+            <!-- Override commons-lang3 to fix CVE-2025-48924 -->
+            <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-lang3</artifactId>
+                <version>${commons-lang3.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
