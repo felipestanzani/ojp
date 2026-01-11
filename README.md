@@ -105,6 +105,7 @@ If Docker is not available in your environment, you can build and run OJP Server
 * OJP supports **multiple relational databases** - in theory it can support any relational database that provides a JDBC driver implementation.
 * OJP simple setup just requires the OJP library in the classpath and the OJP prefix added to the connection URL (e.g., `jdbc:ojp[host:port]_h2:~/test` where `host:port` represents the location of the OJP server).
 * **Drop-In External Libraries**: Add proprietary JDBC drivers (Oracle, SQL Server, DB2) and additional libraries (e.g., Oracle UCP) without recompiling - see [Drop-In Driver Documentation](documents/configuration/DRIVERS_AND_LIBS.md). Simply place JARs in the `ojp-libs` directory.
+* **SQL Query Optimization**: Optional SQL enhancer with Apache Calcite provides query optimization using real database schema metadata for improved performance analysis and dialect translation.
 
 ### Further documents
 - [Drop-In External Libraries Support](documents/configuration/DRIVERS_AND_LIBS.md) - Add proprietary database drivers and libraries (Oracle JDBC, Oracle UCP, SQL Server, DB2) without recompiling.
@@ -112,7 +113,7 @@ If Docker is not available in your environment, you can build and run OJP Server
 - [Get started: Spring Boot, Quarkus and Micronaut](documents/java-frameworks/README.md) - Framework-specific integration guides and examples.
 - [Understanding OJP Service Provider Interfaces (SPIs)](documents/Understanding-OJP-SPIs.md) - Guide for Java developers on implementing custom connection pool providers.
 - [Connection Pool Configuration](documents/configuration/ojp-jdbc-configuration.md) - OJP JDBC driver setup and connection pool settings.
-- [OJP Server Configuration](documents/configuration/ojp-server-configuration.md) - Server startup options and runtime configuration.
+- [OJP Server Configuration](documents/configuration/ojp-server-configuration.md) - Server startup options, runtime configuration, and SQL enhancer with schema loading.
 - [Multinode Configuration](documents/multinode/README.md) - High availability and load balancing with multiple OJP servers.
 - [Slow query segregation feature](documents/designs/SLOW_QUERY_SEGREGATION.md) - Feature that prevent connection starvation by slow queries (or statements).
 - [Telemetry and Observability](documents/telemetry/README.md) - OpenTelemetry integration and monitoring setup.

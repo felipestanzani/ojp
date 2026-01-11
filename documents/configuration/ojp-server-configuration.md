@@ -86,6 +86,101 @@ java -Dojp.server.logLevel=INFO \
 | `ojp.server.slowQuerySegregation.slowSlotTimeout` | `OJP_SERVER_SLOWQUERYSEGREGATION_SLOWSLOTTIMEOUT` | long    | 120000   | Timeout for acquiring slow operation slots (ms) |
 | `ojp.server.slowQuerySegregation.fastSlotTimeout` | `OJP_SERVER_SLOWQUERYSEGREGATION_FASTSLOTTIMEOUT` | long    | 60000    | Timeout for acquiring fast operation slots (ms) |
 
+### SQL Enhancer and Schema Loader Settings
+
+The SQL Enhancer provides query optimization using Apache Calcite with real database schema metadata for accurate query analysis.
+
+| Property                                           | Environment Variable                               | Type    | Default  | Description                                      |
+|----------------------------------------------------|----------------------------------------------------|---------|----------|--------------------------------------------------|
+| `ojp.sql.enhancer.enabled`                        | `OJP_SQL_ENHANCER_ENABLED`                        | boolean | false    | Enable/disable SQL query enhancement            |
+| `ojp.sql.enhancer.schema.refresh.enabled`         | `OJP_SQL_ENHANCER_SCHEMA_REFRESH_ENABLED`         | boolean | true     | Enable automatic schema metadata refresh        |
+| `ojp.sql.enhancer.schema.refresh.interval.hours`  | `OJP_SQL_ENHANCER_SCHEMA_REFRESH_INTERVAL_HOURS`  | long    | 24       | Hours between automatic schema refreshes         |
+| `ojp.sql.enhancer.schema.load.timeout.seconds`    | `OJP_SQL_ENHANCER_SCHEMA_LOAD_TIMEOUT_SECONDS`    | long    | 30       | Timeout for schema loading operations (seconds) |
+| `ojp.sql.enhancer.schema.fallback.enabled`        | `OJP_SQL_ENHANCER_SCHEMA_FALLBACK_ENABLED`        | boolean | true     | Fall back to generic schema if loading fails    |
+
+#### SQL Enhancer Configuration Examples
+
+**Enable SQL enhancement with schema loading:**
+```bash
+# Enable SQL enhancer
+-Dojp.sql.enhancer.enabled=true
+
+# Configure schema refresh (default 24 hours)
+-Dojp.sql.enhancer.schema.refresh.enabled=true
+-Dojp.sql.enhancer.schema.refresh.interval.hours=24
+
+# Set schema load timeout to 60 seconds
+-Dojp.sql.enhancer.schema.load.timeout.seconds=60
+```
+
+**Production setup with frequent schema refresh:**
+```bash
+java -Dojp.sql.enhancer.enabled=true \
+     -Dojp.sql.enhancer.schema.refresh.enabled=true \
+     -Dojp.sql.enhancer.schema.refresh.interval.hours=12 \
+     -Dojp.sql.enhancer.schema.load.timeout.seconds=30 \
+     -jar ojp-server.jar
+```
+
+#### Database Schema Integration
+
+The SQL Enhancer can load real database schema metadata to improve query optimization accuracy. Schema metadata is loaded asynchronously from database connections and cached for performance.
+
+**Features:**
+- **Asynchronous Loading**: Schema metadata loads in the background without blocking queries
+- **Automatic Refresh**: Configurable periodic refresh keeps schema metadata current
+- **Thread-Safe**: Multiple connections can safely access and update schema cache
+- **Fallback Support**: Falls back to generic schema if real schema is unavailable
+- **Multi-Database**: Supports MySQL, PostgreSQL, Oracle, SQL Server, and other JDBC databases
+
+**Required Database Privileges:**
+
+For schema loading to work, the database user needs read access to metadata tables:
+
+- **MySQL/MariaDB:**
+  ```sql
+  GRANT SELECT ON information_schema.tables TO 'user'@'host';
+  GRANT SELECT ON information_schema.columns TO 'user'@'host';
+  ```
+
+- **PostgreSQL:**
+  ```sql
+  GRANT CONNECT ON DATABASE dbname TO user;
+  GRANT USAGE ON SCHEMA schemaname TO user;
+  -- Access to pg_catalog is typically granted by default
+  ```
+
+- **Oracle:**
+  ```sql
+  GRANT SELECT_CATALOG_ROLE TO user;
+  -- OR --
+  GRANT SELECT ANY DICTIONARY TO user;
+  ```
+
+- **SQL Server:**
+  ```sql
+  GRANT VIEW DEFINITION TO user;
+  -- OR --
+  ALTER ROLE db_datareader ADD MEMBER user;
+  ```
+
+**Troubleshooting Schema Loading:**
+
+If schema loading fails, check the following:
+
+1. **Verify database user has required privileges** (see above)
+2. **Check timeout settings** - increase if your database has many tables
+3. **Review server logs** for error messages about schema loading
+4. **Ensure fallback is enabled** - allows queries to work even if schema load fails
+5. **Test with a simple query** to verify schema is loading correctly
+
+The server logs will show messages like:
+```
+INFO  SchemaLoader - Loading schema metadata for catalog: null, schema: null
+INFO  SchemaLoader - Loaded 42 tables in 156ms
+INFO  SchemaCache - Schema cache updated with 42 tables
+```
+
 ## Client-Side Configuration
 
 For JDBC driver and client-side connection pool configuration, see:
