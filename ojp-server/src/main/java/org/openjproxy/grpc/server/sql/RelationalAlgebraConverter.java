@@ -36,6 +36,8 @@ public class RelationalAlgebraConverter {
     
     private final SqlParser.Config parserConfig;
     private final SqlDialect sqlDialect;
+    private final SchemaCache schemaCache;
+    private final CalciteSchemaFactory schemaFactory;
     
     /**
      * Dynamic schema that provides generic tables for any name requested.
@@ -100,10 +102,24 @@ public class RelationalAlgebraConverter {
      * 
      * @param parserConfig The parser configuration
      * @param sqlDialect The SQL dialect for generating SQL
+     * @param schemaCache Optional schema cache for real schema metadata (can be null)
      */
-    public RelationalAlgebraConverter(SqlParser.Config parserConfig, SqlDialect sqlDialect) {
+    public RelationalAlgebraConverter(SqlParser.Config parserConfig, SqlDialect sqlDialect, SchemaCache schemaCache) {
         this.parserConfig = parserConfig;
         this.sqlDialect = sqlDialect;
+        this.schemaCache = schemaCache;
+        this.schemaFactory = new CalciteSchemaFactory();
+    }
+    
+    /**
+     * Creates a new converter with the specified parser configuration and SQL dialect.
+     * Uses generic schema only (no real database schema).
+     * 
+     * @param parserConfig The parser configuration
+     * @param sqlDialect The SQL dialect for generating SQL
+     */
+    public RelationalAlgebraConverter(SqlParser.Config parserConfig, SqlDialect sqlDialect) {
+        this(parserConfig, sqlDialect, null);
     }
     
     /**
@@ -118,16 +134,30 @@ public class RelationalAlgebraConverter {
         log.debug("Converting SQL to RelNode");
         
         try {
-            // Create a root schema with dynamic table support
+            // Create a root schema
             SchemaPlus rootSchema = Frameworks.createRootSchema(true);
             
-            // Add a dynamic schema that creates tables on-demand
-            SchemaPlus dynamicSchema = rootSchema.add("default", new DynamicSchema());
+            // Try to use real schema from cache, fall back to dynamic schema
+            SchemaPlus defaultSchema;
+            if (schemaCache != null) {
+                SchemaMetadata metadata = schemaCache.getSchema(false);
+                if (metadata != null && !metadata.getTables().isEmpty()) {
+                    log.debug("Using real schema with {} tables", metadata.getTables().size());
+                    org.apache.calcite.schema.Schema realSchema = schemaFactory.createSchema(metadata);
+                    defaultSchema = rootSchema.add("default", realSchema);
+                } else {
+                    log.debug("Real schema not available, using dynamic schema");
+                    defaultSchema = rootSchema.add("default", new DynamicSchema());
+                }
+            } else {
+                log.debug("No schema cache provided, using dynamic schema");
+                defaultSchema = rootSchema.add("default", new DynamicSchema());
+            }
             
             // Create framework configuration
             FrameworkConfig config = Frameworks.newConfigBuilder()
                 .parserConfig(parserConfig)
-                .defaultSchema(dynamicSchema)
+                .defaultSchema(defaultSchema)
                 .build();
             
             // Use planner for conversion

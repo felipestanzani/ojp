@@ -37,6 +37,12 @@ public class ServerConfiguration {
     private static final String DRIVERS_PATH_KEY = "ojp.libs.path";
     private static final String SQL_ENHANCER_ENABLED_KEY = "ojp.sql.enhancer.enabled";
     
+    // Schema loader configuration keys
+    private static final String SCHEMA_REFRESH_ENABLED_KEY = "ojp.sql.enhancer.schema.refresh.enabled";
+    private static final String SCHEMA_REFRESH_INTERVAL_HOURS_KEY = "ojp.sql.enhancer.schema.refresh.interval.hours";
+    private static final String SCHEMA_LOAD_TIMEOUT_SECONDS_KEY = "ojp.sql.enhancer.schema.load.timeout.seconds";
+    private static final String SCHEMA_FALLBACK_ENABLED_KEY = "ojp.sql.enhancer.schema.fallback.enabled";
+    
 
     // Default values
     public static final int DEFAULT_SERVER_PORT = CommonConstants.DEFAULT_PORT_NUMBER;
@@ -62,6 +68,12 @@ public class ServerConfiguration {
     
     // SQL Enhancer default values
     public static final boolean DEFAULT_SQL_ENHANCER_ENABLED = false; // Disabled by default, opt-in
+    
+    // Schema loader default values
+    public static final boolean DEFAULT_SCHEMA_REFRESH_ENABLED = true;
+    public static final long DEFAULT_SCHEMA_REFRESH_INTERVAL_HOURS = 24;
+    public static final long DEFAULT_SCHEMA_LOAD_TIMEOUT_SECONDS = 30;
+    public static final boolean DEFAULT_SCHEMA_FALLBACK_ENABLED = true;
     
     // XA pooling default values
     public static final boolean DEFAULT_XA_POOLING_ENABLED = true; // Enable XA pooling by default
@@ -93,6 +105,12 @@ public class ServerConfiguration {
     private final String driversPath;
     private final boolean sqlEnhancerEnabled;
     
+    // Schema loader configuration
+    private final boolean schemaRefreshEnabled;
+    private final long schemaRefreshIntervalHours;
+    private final long schemaLoadTimeoutSeconds;
+    private final boolean schemaFallbackEnabled;
+    
 
     public ServerConfiguration() {
         this.serverPort = getIntProperty(SERVER_PORT_KEY, DEFAULT_SERVER_PORT);
@@ -115,6 +133,12 @@ public class ServerConfiguration {
         this.slowQueryUpdateGlobalAvgInterval = getLongProperty(SLOW_QUERY_UPDATE_GLOBAL_AVG_INTERVAL_KEY, DEFAULT_SLOW_QUERY_UPDATE_GLOBAL_AVG_INTERVAL);
         this.driversPath = getStringProperty(DRIVERS_PATH_KEY, DEFAULT_DRIVERS_PATH);
         this.sqlEnhancerEnabled = getBooleanProperty(SQL_ENHANCER_ENABLED_KEY, DEFAULT_SQL_ENHANCER_ENABLED);
+        
+        // Schema loader configuration
+        this.schemaRefreshEnabled = getBooleanProperty(SCHEMA_REFRESH_ENABLED_KEY, DEFAULT_SCHEMA_REFRESH_ENABLED);
+        this.schemaRefreshIntervalHours = getLongProperty(SCHEMA_REFRESH_INTERVAL_HOURS_KEY, DEFAULT_SCHEMA_REFRESH_INTERVAL_HOURS);
+        this.schemaLoadTimeoutSeconds = getLongProperty(SCHEMA_LOAD_TIMEOUT_SECONDS_KEY, DEFAULT_SCHEMA_LOAD_TIMEOUT_SECONDS);
+        this.schemaFallbackEnabled = getBooleanProperty(SCHEMA_FALLBACK_ENABLED_KEY, DEFAULT_SCHEMA_FALLBACK_ENABLED);
         
 
         logConfigurationSummary();
@@ -297,6 +321,22 @@ public class ServerConfiguration {
 
     public boolean isSqlEnhancerEnabled() {
         return sqlEnhancerEnabled;
+    }
+    
+    public boolean isSchemaRefreshEnabled() {
+        return schemaRefreshEnabled;
+    }
+    
+    public long getSchemaRefreshIntervalHours() {
+        return schemaRefreshIntervalHours;
+    }
+    
+    public long getSchemaLoadTimeoutSeconds() {
+        return schemaLoadTimeoutSeconds;
+    }
+    
+    public boolean isSchemaFallbackEnabled() {
+        return schemaFallbackEnabled;
     }
     
 }

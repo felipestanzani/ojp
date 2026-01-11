@@ -39,6 +39,10 @@ public class SqlEnhancerEngine {
     private final OptimizationRuleRegistry ruleRegistry;
     private final List<String> enabledRules;
     
+    // Schema management
+    private final SchemaCache schemaCache;
+    private final long schemaRefreshIntervalMillis;
+    
     // Metrics tracking - using AtomicLong for thread-safe updates without synchronization
     private final AtomicLong totalQueriesProcessed = new AtomicLong(0);
     private final AtomicLong totalQueriesOptimized = new AtomicLong(0);
@@ -54,15 +58,20 @@ public class SqlEnhancerEngine {
      * @param conversionEnabled Whether to enable SQL-to-RelNode conversion
      * @param optimizationEnabled Whether to enable query optimization
      * @param enabledRules List of rule names to enable (null = use safe rules)
+     * @param schemaCache Optional schema cache for real schema metadata (can be null)
+     * @param schemaRefreshIntervalHours Hours between schema refreshes (0 = disabled)
      */
     public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled,
-                             boolean optimizationEnabled, List<String> enabledRules) {
+                             boolean optimizationEnabled, List<String> enabledRules,
+                             SchemaCache schemaCache, long schemaRefreshIntervalHours) {
         this.enabled = enabled;
         this.conversionEnabled = conversionEnabled;
         this.optimizationEnabled = optimizationEnabled;
         this.cache = new ConcurrentHashMap<>();
         this.dialect = OjpSqlDialect.fromString(dialectName);
         this.calciteDialect = dialect.getCalciteDialect();
+        this.schemaCache = schemaCache;
+        this.schemaRefreshIntervalMillis = schemaRefreshIntervalHours * 60 * 60 * 1000; // Convert hours to milliseconds
         
         // Configure parser with dialect-specific settings
         SqlParser.Config baseConfig = SqlParser.config();
@@ -75,9 +84,9 @@ public class SqlEnhancerEngine {
             .withCaseSensitive(false); // Most SQL is case-insensitive
         
         // Initialize converter if conversion is enabled
-        // Pass SqlDialect for SQL generation
+        // Pass SqlDialect for SQL generation and SchemaCache for real schema
         this.converter = conversionEnabled ? 
-            new RelationalAlgebraConverter(parserConfig, calciteDialect) : null;
+            new RelationalAlgebraConverter(parserConfig, calciteDialect, schemaCache) : null;
         
         // Initialize optimization components
         this.ruleRegistry = new OptimizationRuleRegistry();
@@ -87,11 +96,26 @@ public class SqlEnhancerEngine {
         if (enabled) {
             String conversionStatus = conversionEnabled ? " with relational algebra conversion" : "";
             String optimizationStatus = optimizationEnabled ? " and optimization" : "";
-            log.info("SQL Enhancer Engine initialized and enabled with dialect: {}{}{}", 
-                    dialectName, conversionStatus, optimizationStatus);
+            String schemaStatus = schemaCache != null ? " and real schema support" : "";
+            log.info("SQL Enhancer Engine initialized and enabled with dialect: {}{}{}{}", 
+                    dialectName, conversionStatus, optimizationStatus, schemaStatus);
         } else {
             log.info("SQL Enhancer Engine initialized but disabled");
         }
+    }
+    
+    /**
+     * Creates a new SqlEnhancerEngine with full configuration options (no schema cache).
+     * 
+     * @param enabled Whether the SQL enhancer is enabled
+     * @param dialectName The SQL dialect to use
+     * @param conversionEnabled Whether to enable SQL-to-RelNode conversion
+     * @param optimizationEnabled Whether to enable query optimization
+     * @param enabledRules List of rule names to enable (null = use safe rules)
+     */
+    public SqlEnhancerEngine(boolean enabled, String dialectName, boolean conversionEnabled,
+                             boolean optimizationEnabled, List<String> enabledRules) {
+        this(enabled, dialectName, conversionEnabled, optimizationEnabled, enabledRules, null, 0);
     }
     
     /**
