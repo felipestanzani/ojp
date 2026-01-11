@@ -25,35 +25,11 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Force Netty version to fix CVE-2025-67735, CVE-2025-58057, CVE-2025-58056, CVE-2025-55163 -->
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-bom</artifactId>
-                <version>${netty.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
             <!--Set transient dependencies of Guava to compatible version-->
             <dependency>
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>32.1.0-jre</version>
-            </dependency>
-            
-            <!-- Override Netty versions to fix CVE-2025-25193, CVE-2024-47535, CVE-2025-24970 -->
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-bom</artifactId>
-                <version>${netty.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            
-            <!-- Override commons-lang3 to fix CVE-2025-48924 -->
-            <dependency>
-                <groupId>org.apache.commons</groupId>
-                <artifactId>commons-lang3</artifactId>
-                <version>3.18.0</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
