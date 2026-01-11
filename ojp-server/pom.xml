@@ -15,7 +15,8 @@
     </parent>
 
     <properties>
-        <grpc.version>1.70.0</grpc.version>
+        <grpc.version>1.78.0</grpc.version>
+        <netty.version>4.1.130.Final</netty.version>
         <slf4j.version>2.0.17</slf4j.version>
         <jib.plugin.version>3.4.5</jib.plugin.version>
         <maven.compiler.source>17</maven.compiler.source>
@@ -24,6 +25,14 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Force Netty version to fix CVE-2025-67735, CVE-2025-58057, CVE-2025-58056, CVE-2025-55163 -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>${netty.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <!--Set transient dependencies of Guava to compatible version-->
             <dependency>
                 <groupId>com.google.guava</groupId>
