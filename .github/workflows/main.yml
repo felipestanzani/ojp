@@ -111,6 +111,12 @@ jobs:
       - name: Test (ojp-jdbc-driver) with H2 only
         run: mvn test -pl ojp-jdbc-driver -Dgpg.skip=true -DenableH2Tests=true
 
+      # Meterian Security Scanner - scans for vulnerabilities
+      # continue-on-error ensures that scan failures don't block other jobs
+      - name: Meterian Scanner
+        uses: MeterianHQ/meterian-github-action@v1.0.17
+        continue-on-error: true
+
       - name: Show ojp-server.log
         if: always()  # ensures it runs even if previous steps fail
         run: cat /tmp/ojp-server.log || echo "/tmp/ojp-server.log not found"
