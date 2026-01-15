@@ -148,7 +148,10 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         this.sessionManager = sessionManager;
         this.circuitBreaker = circuitBreaker;
         this.serverConfiguration = serverConfiguration;
-        this.sqlEnhancerEngine = new org.openjproxy.grpc.server.sql.SqlEnhancerEngine(serverConfiguration.isSqlEnhancerEnabled());
+        
+        // Initialize SQL enhancer with full configuration
+        this.sqlEnhancerEngine = createSqlEnhancerEngine(serverConfiguration);
+        
         initializeXAPoolProvider();
         
         // Initialize ActionContext with all shared state
@@ -165,6 +168,38 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             sessionManager,
             circuitBreaker,
             serverConfiguration
+        );
+    }
+
+    /**
+     * Creates and configures the SQL enhancer engine based on server configuration.
+     * Parses mode to determine conversion and optimization settings.
+     * 
+     * @param config Server configuration
+     * @return Configured SqlEnhancerEngine instance
+     */
+    private org.openjproxy.grpc.server.sql.SqlEnhancerEngine createSqlEnhancerEngine(ServerConfiguration config) {
+        // Parse mode to determine conversion and optimization settings
+        org.openjproxy.grpc.server.sql.SqlEnhancerMode mode = 
+            org.openjproxy.grpc.server.sql.SqlEnhancerMode.fromString(config.getSqlEnhancerMode());
+        
+        // Parse rules if specified, otherwise use defaults
+        java.util.List<String> enabledRules = null;
+        if (config.getSqlEnhancerRules() != null && !config.getSqlEnhancerRules().trim().isEmpty()) {
+            enabledRules = java.util.Arrays.asList(config.getSqlEnhancerRules().split(","))
+                .stream()
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .collect(java.util.stream.Collectors.toList());
+        }
+        
+        // Create engine with full configuration
+        return new org.openjproxy.grpc.server.sql.SqlEnhancerEngine(
+            config.isSqlEnhancerEnabled(),
+            config.getSqlEnhancerDialect(),
+            mode.isConversionEnabled(),
+            mode.isOptimizationEnabled(),
+            enabledRules
         );
     }
 
