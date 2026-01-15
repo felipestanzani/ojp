@@ -2310,32 +2310,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     @Override
     public void xaIsSameRM(com.openjproxy.grpc.XaIsSameRMRequest request, 
                            StreamObserver<com.openjproxy.grpc.XaIsSameRMResponse> responseObserver) {
-        log.debug("xaIsSameRM: session1={}, session2={}", 
-                request.getSession1().getSessionUUID(), request.getSession2().getSessionUUID());
-        
-        try {
-            Session session1 = sessionManager.getSession(request.getSession1());
-            Session session2 = sessionManager.getSession(request.getSession2());
-            
-            if (session1 == null || !session1.isXA() || session1.getXaResource() == null) {
-                throw new SQLException("Session1 is not an XA session");
-            }
-            if (session2 == null || !session2.isXA() || session2.getXaResource() == null) {
-                throw new SQLException("Session2 is not an XA session");
-            }
-            
-            boolean isSame = session1.getXaResource().isSameRM(session2.getXaResource());
-            
-            com.openjproxy.grpc.XaIsSameRMResponse response = com.openjproxy.grpc.XaIsSameRMResponse.newBuilder()
-                    .setIsSame(isSame)
-                    .build();
-            responseObserver.onNext(response);
-            responseObserver.onCompleted();
-
-        } catch (Exception e) {
-            log.error("Error in xaIsSameRM", e);
-            SQLException sqlException = (e instanceof SQLException) ? (SQLException) e : new SQLException(e);
-            sendSQLExceptionMetadata(sqlException, responseObserver);
-        }
+        new org.openjproxy.grpc.server.action.transaction.XaIsSameRMAction(sessionManager)
+                .execute(request, responseObserver);
     }
 }
