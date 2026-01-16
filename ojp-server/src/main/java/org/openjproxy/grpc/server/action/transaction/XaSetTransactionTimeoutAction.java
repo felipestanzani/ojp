@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.openjproxy.grpc.server.Session;
 import org.openjproxy.grpc.server.SessionManager;
 import org.openjproxy.grpc.server.action.Action;
+import org.openjproxy.grpc.server.action.ActionContext;
 
 import java.sql.SQLException;
 
@@ -37,11 +38,25 @@ import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMe
 @Slf4j
 public class XaSetTransactionTimeoutAction
         implements Action<XaSetTransactionTimeoutRequest, XaSetTransactionTimeoutResponse> {
-    private final SessionManager sessionManager;
 
-    public XaSetTransactionTimeoutAction(SessionManager sessionManager) {
-        this.sessionManager = sessionManager;
+    private static final XaSetTransactionTimeoutAction INSTANCE = new XaSetTransactionTimeoutAction();
+
+    /**
+     * Private constructor prevents external instantiation.
+     */
+    private XaSetTransactionTimeoutAction() {
+        // Private constructor for singleton pattern
     }
+
+    /**
+     * Returns the singleton instance of XaSetTransactionTimeoutAction.
+     *
+     * @return the singleton instance
+     */
+    public static XaSetTransactionTimeoutAction getInstance() {
+        return INSTANCE;
+    }
+
 
     /**
      * Applies the XA transaction timeout for the provided session.
@@ -64,19 +79,20 @@ public class XaSetTransactionTimeoutAction
      * If the session is not XA or an error occurs, the call is completed with SQL
      * exception metadata.
      *
+     * @param context          the action context containing the session manager
      * @param request          request containing the session identifier and timeout
      *                         value in seconds
      * @param responseObserver observer used to stream the
      *                         {@link XaSetTransactionTimeoutResponse} or an error
      */
     @Override
-    public void execute(XaSetTransactionTimeoutRequest request,
+    public void execute(ActionContext context, XaSetTransactionTimeoutRequest request,
                         StreamObserver<XaSetTransactionTimeoutResponse> responseObserver) {
         log.debug("xaSetTransactionTimeout: session={}, seconds={}",
                 request.getSession().getSessionUUID(), request.getSeconds());
 
         try {
-            Session session = sessionManager.getSession(request.getSession());
+            Session session = context.getSessionManager().getSession(request.getSession());
             if (session == null || !session.isXA() || session.getXaResource() == null) {
                 throw new SQLException("Session is not an XA session");
             }

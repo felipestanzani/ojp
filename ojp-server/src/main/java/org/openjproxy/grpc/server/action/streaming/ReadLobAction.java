@@ -11,6 +11,7 @@ import org.apache.commons.io.input.ReaderInputStream;
 import org.openjproxy.grpc.server.SessionManager;
 import org.openjproxy.grpc.server.StatementServiceImpl;
 import org.openjproxy.grpc.server.action.Action;
+import org.openjproxy.grpc.server.action.ActionContext;
 
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -37,10 +38,23 @@ import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMe
 @Slf4j
 public class ReadLobAction implements Action<ReadLobRequest, LobDataBlock> {
 
-    private final SessionManager sessionManager;
 
-    public ReadLobAction(SessionManager sessionManager) {
-        this.sessionManager = sessionManager;
+    private static final ReadLobAction INSTANCE = new ReadLobAction();
+
+    /**
+     * Private constructor prevents external instantiation.
+     */
+    private ReadLobAction() {
+        // Private constructor for singleton pattern
+    }
+
+    /**
+     * Returns the singleton instance of ReadLobAction.
+     *
+     * @return the singleton instance
+     */
+    public static ReadLobAction getInstance() {
+        return INSTANCE;
     }
 
     /**
@@ -62,17 +76,18 @@ public class ReadLobAction implements Action<ReadLobRequest, LobDataBlock> {
      * SQLExceptions are propagated to the
      * client via gRPC metadata.
      *
+     * @param context          the action context containing the session manager
      * @param request          the read request containing the LOB reference, start
      *                         position and requested length
      * @param responseObserver observer used to emit {@link LobDataBlock} messages
      *                         and completion
      */
     @Override
-    public void execute(ReadLobRequest request, StreamObserver<LobDataBlock> responseObserver) {
+    public void execute(ActionContext context, ReadLobRequest request, StreamObserver<LobDataBlock> responseObserver) {
         log.debug("Reading lob {}", request.getLobReference().getUuid());
         try {
             LobReference lobRef = request.getLobReference();
-            StatementServiceImpl.ReadLobContext readLobContext = this.findLobContext(request);
+            StatementServiceImpl.ReadLobContext readLobContext = this.findLobContext(context.getSessionManager(), request);
             InputStream inputStream = readLobContext.getInputStream();
             if (inputStream == null) {
                 responseObserver.onNext(LobDataBlock.newBuilder()
@@ -104,12 +119,9 @@ public class ReadLobAction implements Action<ReadLobRequest, LobDataBlock> {
                             .setPosition(currentPos)
                             .setData(ByteString.copyFrom(nextBlock))
                             .build());
-                    nextBlockSize = this.nextBlockSize(readLobContext, currentPos - 1);
-                    if (nextBlockSize > 0) {// Might be a single small block then nextBlockSize will return negative.
-                        nextBlock = new byte[nextBlockSize];
-                    } else {
-                        nextBlock = new byte[0];
-                    }
+                    nextBlockSize = this.nextBlockSize(readLobContext, (long)currentPos - 1);
+                    // Might be a single small block then nextBlockSize will return negative.
+                    nextBlock = nextBlockSize > 0 ? new byte[nextBlockSize] : new byte[0];
                     nextBlockFullyEmpty = true;
                     idx = -1;
                 }
@@ -199,11 +211,12 @@ public class ReadLobAction implements Action<ReadLobRequest, LobDataBlock> {
      * @throws SQLException if the LOB cannot be accessed via the JDBC driver
      */
     @SneakyThrows
-    private StatementServiceImpl.ReadLobContext findLobContext(ReadLobRequest request) throws SQLException {
+    private StatementServiceImpl.ReadLobContext findLobContext(SessionManager sessionManager, ReadLobRequest request) throws SQLException {
         InputStream inputStream = null;
         LobReference lobReference = request.getLobReference();
         StatementServiceImpl.ReadLobContext.ReadLobContextBuilder readLobContextBuilder = StatementServiceImpl.ReadLobContext
                 .builder();
+
         switch (request.getLobReference().getLobType()) {
             case LT_BLOB: {
                 inputStream = this.inputStreamFromBlob(sessionManager, lobReference, request, readLobContextBuilder);

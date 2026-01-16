@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.openjproxy.grpc.server.Session;
 import org.openjproxy.grpc.server.SessionManager;
 import org.openjproxy.grpc.server.action.Action;
+import org.openjproxy.grpc.server.action.ActionContext;
 
 import java.sql.SQLException;
 
@@ -26,10 +27,21 @@ import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMe
 public class XaGetTransactionTimeoutAction
         implements Action<XaGetTransactionTimeoutRequest, XaGetTransactionTimeoutResponse> {
 
-    private final SessionManager sessionManager;
+    private static final XaGetTransactionTimeoutAction INSTANCE = new XaGetTransactionTimeoutAction();
 
-    public XaGetTransactionTimeoutAction(SessionManager sessionManager) {
-        this.sessionManager = sessionManager;
+    /**
+     * Private constructor prevents external instantiation.
+     */
+    private XaGetTransactionTimeoutAction() {
+        // Private constructor for singleton pattern
+    }
+
+    /**
+     * Returns the singleton instance of XaGetTransactionTimeoutAction.
+     * @return the singleton instance
+     */
+    public static XaGetTransactionTimeoutAction getInstance() {
+        return INSTANCE;
     }
 
     /**
@@ -49,17 +61,18 @@ public class XaGetTransactionTimeoutAction
      * If the session is not XA or an error occurs, the call is completed with SQL
      * exception metadata.
      *
+     * @param context          the action context containing the session manager
      * @param request          request containing the session identifier
      * @param responseObserver observer used to stream the
      *                         {@link XaGetTransactionTimeoutResponse} or an error
      */
     @Override
-    public void execute(XaGetTransactionTimeoutRequest request,
+    public void execute(ActionContext context, XaGetTransactionTimeoutRequest request,
                         StreamObserver<XaGetTransactionTimeoutResponse> responseObserver) {
         log.debug("xaGetTransactionTimeout: session={}", request.getSession().getSessionUUID());
 
         try {
-            Session session = sessionManager.getSession(request.getSession());
+            Session session = context.getSessionManager().getSession(request.getSession());
             if (session == null || !session.isXA() || session.getXaResource() == null) {
                 throw new SQLException("Session is not an XA session");
             }

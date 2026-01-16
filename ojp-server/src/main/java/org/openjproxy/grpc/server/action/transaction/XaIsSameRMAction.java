@@ -7,6 +7,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.openjproxy.grpc.server.Session;
 import org.openjproxy.grpc.server.SessionManager;
 import org.openjproxy.grpc.server.action.Action;
+import org.openjproxy.grpc.server.action.ActionContext;
 
 import java.sql.SQLException;
 
@@ -33,10 +34,22 @@ import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMe
 @Slf4j
 public class XaIsSameRMAction implements Action<XaIsSameRMRequest, XaIsSameRMResponse> {
 
-    private final SessionManager sessionManager;
+    private static final XaIsSameRMAction INSTANCE = new XaIsSameRMAction();
 
-    public XaIsSameRMAction(SessionManager sessionManager) {
-        this.sessionManager = sessionManager;
+    /**
+     * Private constructor prevents external instantiation.
+     */
+    private XaIsSameRMAction() {
+        // Private constructor for singleton pattern
+    }
+
+    /**
+     * Returns the singleton instance of XaIsSameRMAction.
+     *
+     * @return the singleton instance
+     */
+    public static XaIsSameRMAction getInstance() {
+        return INSTANCE;
     }
 
     /**
@@ -49,6 +62,7 @@ public class XaIsSameRMAction implements Action<XaIsSameRMRequest, XaIsSameRMRes
      * error is returned.
      * </p>
      *
+     * @param context          the action context containing the session manager
      * @param request          the gRPC request containing {@code session1} and
      *                         {@code session2}
      * @param responseObserver observer used to emit the {@link XaIsSameRMResponse}
@@ -56,11 +70,13 @@ public class XaIsSameRMAction implements Action<XaIsSameRMRequest, XaIsSameRMRes
      *                         SQL exception metadata
      */
     @Override
-    public void execute(XaIsSameRMRequest request, StreamObserver<XaIsSameRMResponse> responseObserver) {
+    public void execute(ActionContext context, XaIsSameRMRequest request, StreamObserver<XaIsSameRMResponse> responseObserver) {
         log.debug("xaIsSameRM: session1={}, session2={}",
                 request.getSession1().getSessionUUID(), request.getSession2().getSessionUUID());
 
         try {
+            var sessionManager = context.getSessionManager();
+
             Session session1 = sessionManager.getSession(request.getSession1());
             Session session2 = sessionManager.getSession(request.getSession2());
 
