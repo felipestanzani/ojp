@@ -21,11 +21,9 @@
    
    OJP Server requires JDBC drivers to connect to databases. The open source drivers (H2, PostgreSQL, MySQL, MariaDB) are not packaged with OJP by default and must be downloaded separately.
    
-   Navigate to the ojp-server directory and run the download script:
+   Run the download script from the project root:
    ```bash
-   cd ojp-server
-   bash download-drivers.sh
-   cd ..
+   bash ojp-server/download-drivers.sh
    ```
    
    This script downloads the following drivers from Maven Central:
@@ -36,10 +34,10 @@
    
    The drivers will be placed in the `ojp-server/ojp-libs` directory. You can optionally specify a custom directory:
    ```bash
-   bash download-drivers.sh /path/to/custom/directory
+   bash ojp-server/download-drivers.sh /path/to/custom/directory
    ```
    
-   **Note:** For proprietary databases (Oracle, SQL Server, DB2), you'll need to manually download and place their JDBC drivers in the ojp-libs directory. See the respective testing guides for details.
+   **Note:** For proprietary databases (Oracle, SQL Server, DB2), you'll need to manually download and place their JDBC drivers in the ojp-libs directory. See the [Oracle Testing Guide](../../documents/environment-setup/oracle-testing-guide.md), [SQL Server Testing Guide](../../documents/environment-setup/sqlserver-testing-guide.md), and [DB2 Testing Guide](../../documents/environment-setup/db2-testing-guide.md) for specific instructions.
 
 4. **Start OJP server** (required for running tests)
    ```bash
