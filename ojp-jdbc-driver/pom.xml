@@ -129,6 +129,14 @@
             <scope>test</scope>
         </dependency>
 
+        <!-- OJP TestContainers - Added for OJP Server integration tests -->
+        <dependency>
+            <groupId>org.openjproxy</groupId>
+            <artifactId>ojp-testcontainers</artifactId>
+            <version>0.3.2-snapshot</version>
+            <scope>test</scope>
+        </dependency>
+
     </dependencies>
 
     <build>
