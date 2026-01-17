@@ -94,6 +94,7 @@ import static org.openjproxy.grpc.server.Constants.EMPTY_MAP;
 import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMetadata;
 import static org.openjproxy.grpc.server.action.transaction.XidHelper.convertXid;
 import static org.openjproxy.grpc.server.action.transaction.XidHelper.convertXidToProto;
+import org.openjproxy.grpc.server.action.session.TerminateSessionAction;
 
 @Slf4j
 public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceImplBase {
@@ -1201,39 +1202,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
     @Override
     public void terminateSession(SessionInfo sessionInfo, StreamObserver<SessionTerminationStatus> responseObserver) {
-        try {
-            log.info("Terminating session");
-
-            // Before terminating, return any completed XA backend sessions to pool
-            // This implements the dual-condition lifecycle: sessions are returned when
-            // both transaction is complete AND XAConnection is closed
-            log.info("[XA-TERMINATE] terminateSession called for sessionUUID={}, isXA={}, connHash={}",
-                    sessionInfo.getSessionUUID(), sessionInfo.getIsXA(), sessionInfo.getConnHash());
-            if (sessionInfo.getIsXA()) {
-                String connHash = sessionInfo.getConnHash();
-                XATransactionRegistry registry = xaRegistries.get(connHash);
-                log.info("[XA-TERMINATE] Looking up XA registry for connHash={}, found={}", connHash, registry != null);
-                if (registry != null) {
-                    log.info("[XA-TERMINATE] Calling returnCompletedSessions for ojpSessionId={}", sessionInfo.getSessionUUID());
-                    int returnedCount = registry.returnCompletedSessions(sessionInfo.getSessionUUID());
-                    log.info("[XA-TERMINATE] returnCompletedSessions returned count={}", returnedCount);
-                    if (returnedCount > 0) {
-                        log.info("Returned {} completed XA backend sessions to pool on session termination", returnedCount);
-                    }
-                } else {
-                    log.warn("[XA-TERMINATE] No XA registry found for connHash={}", connHash);
-                }
-            }
-
-            log.info("[XA-TERMINATE] Calling sessionManager.terminateSession for sessionUUID={}", sessionInfo.getSessionUUID());
-            this.sessionManager.terminateSession(sessionInfo);
-            responseObserver.onNext(SessionTerminationStatus.newBuilder().setTerminated(true).build());
-            responseObserver.onCompleted();
-        } catch (SQLException se) {
-            sendSQLExceptionMetadata(se, responseObserver);
-        } catch (Exception e) {
-            sendSQLExceptionMetadata(new SQLException("Unable to terminate session: " + e.getMessage()), responseObserver);
-        }
+        TerminateSessionAction.getInstance()
+                .execute(actionContext, sessionInfo, responseObserver);
     }
 
     @Override
