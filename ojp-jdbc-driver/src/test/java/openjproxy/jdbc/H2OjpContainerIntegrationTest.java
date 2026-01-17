@@ -42,11 +42,9 @@ public class H2OjpContainerIntegrationTest {
     }
 
     @Test
-    public void testSimpleH2QueryThroughOjpContainer() throws SQLException, ClassNotFoundException {
-        // Load OJP JDBC driver
-        Class.forName("org.openjproxy.jdbc.Driver");
-        
+    public void testSimpleH2QueryThroughOjpContainer() throws SQLException {
         // Build JDBC URL with OJP connection string: jdbc:ojp[host:port]_h2:~/test
+        // JDBC driver auto-registers when on classpath (JDBC 4.0+)
         String jdbcUrl = "jdbc:ojp[" + ojpConnectionString + "]_h2:~/testojp";
         
         // Connect through OJP to H2
