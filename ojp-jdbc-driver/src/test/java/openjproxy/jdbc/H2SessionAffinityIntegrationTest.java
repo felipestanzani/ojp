@@ -54,7 +54,7 @@ public class H2SessionAffinityIntegrationTest {
 
             // Create temporary table (this should trigger session affinity)
             log.debug("Creating H2 local temporary table");
-            stmt.execute("CREATE LOCAL TEMPORARY TABLE temp_session_test (id INT, value VARCHAR(100))");
+            stmt.execute("CREATE LOCAL TEMPORARY TABLE temp_session_test (id INT, \"value\" VARCHAR(100))");
 
             // Insert data into temporary table (should use same session)
             log.debug("Inserting data into temporary table");
@@ -62,7 +62,7 @@ public class H2SessionAffinityIntegrationTest {
 
             // Query temporary table (should use same session)
             log.debug("Querying temporary table");
-            ResultSet rs = stmt.executeQuery("SELECT id, value FROM temp_session_test");
+            ResultSet rs = stmt.executeQuery("SELECT id, \"value\" FROM temp_session_test");
             
             // Verify data was inserted and retrieved successfully
             Assert.assertTrue("Should have at least one row in temporary table", rs.next());

@@ -36,7 +36,7 @@ public class SQLServerSessionAffinityIntegrationTest {
      */
     @ParameterizedTest
     @CsvFileSource(resources = "/sqlserver_connections.csv")
-    public void testTemporaryTableSessionAffinity(String driverClass, String url, String user, String pwd, boolean isXA) 
+    public void testTemporaryTableSessionAffinity(String driverClass, String url, String user, String pwd) 
             throws SQLException, ClassNotFoundException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
 
@@ -92,7 +92,7 @@ public class SQLServerSessionAffinityIntegrationTest {
      */
     @ParameterizedTest
     @CsvFileSource(resources = "/sqlserver_connections.csv")
-    public void testComplexTemporaryTableOperations(String driverClass, String url, String user, String pwd, boolean isXA) 
+    public void testComplexTemporaryTableOperations(String driverClass, String url, String user, String pwd) 
             throws SQLException, ClassNotFoundException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
 
@@ -166,7 +166,7 @@ public class SQLServerSessionAffinityIntegrationTest {
      */
     @ParameterizedTest
     @CsvFileSource(resources = "/sqlserver_connections.csv")
-    public void testTemporaryTablePersistenceAcrossTransactions(String driverClass, String url, String user, String pwd, boolean isXA) 
+    public void testTemporaryTablePersistenceAcrossTransactions(String driverClass, String url, String user, String pwd) 
             throws SQLException, ClassNotFoundException {
         assumeFalse(isTestDisabled, "SQL Server tests are disabled");
 
