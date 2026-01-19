@@ -37,9 +37,10 @@ import io.grpc.stub.StreamObserver;
 public interface StreamingAction<TRequest, TResponse> {
     /**
      * Execute the action and return a StreamObserver for receiving client requests.
-     * 
+     *
+     * @param context The action context containing shared state and services
      * @param responseObserver The gRPC response observer for sending responses to client
      * @return StreamObserver for receiving streaming requests from client
      */
-    StreamObserver<TRequest> execute(StreamObserver<TResponse> responseObserver);
+    StreamObserver<TRequest> execute(ActionContext context, StreamObserver<TResponse> responseObserver);
 }
