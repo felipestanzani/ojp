@@ -73,10 +73,10 @@ The default provider works out-of-the-box with all supported databases:
 
 ```properties
 # Enable XA pooling (default: true)
-ojp.xa.pooling.enabled=true
+ojp.xa.connection.pool.enabled=true
 
 # Pool configuration
-ojp.xa.maxPoolSize=10
+ojp.xa.connection.pool.maximumPoolSize=10
 ojp.xa.minIdle=2
 ojp.xa.maxWaitMillis=30000
 ojp.xa.idleTimeoutMinutes=10
@@ -135,7 +135,7 @@ The pass-through implementation is preserved but disabled by default:
 
 ```properties
 # Disable XA pooling (falls back to pass-through)
-ojp.xa.pooling.enabled=false
+ojp.xa.connection.pool.enabled=false
 ```
 
 This allows easy rollback if issues are encountered.
