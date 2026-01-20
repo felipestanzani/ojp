@@ -58,7 +58,7 @@ The new implementation introduces **XA Pool Provider SPI with lazy allocation** 
 
 ### 3.1 Recommended Approach: Phased Co-Existence
 
-**Phase 1: Co-Existence** (Week 1) - Add XA Pool Provider SPI alongside existing pass-through with config toggle `ojp.xa.pooling.enabled=false`
+**Phase 1: Co-Existence** (Week 1) - Add XA Pool Provider SPI alongside existing pass-through with config toggle `ojp.xa.connection.pool.enabled=false`
 
 **Phase 2: Testing** (Weeks 2-3) - Integration testing with Atomikos/Narayana, database compatibility, performance benchmarking
 
@@ -72,7 +72,7 @@ The new implementation introduces **XA Pool Provider SPI with lazy allocation** 
 
 ### 4.1 StatementServiceImpl.java (~150 lines added)
 
-Add branching logic based on `ojp.xa.pooling.enabled` configuration property. If enabled, use XAConnectionPoolProvider with deferred session creation. If disabled, use existing pass-through XADataSourceFactory.
+Add branching logic based on `ojp.xa.connection.pool.enabled` configuration property. If enabled, use XAConnectionPoolProvider with deferred session creation. If disabled, use existing pass-through XADataSourceFactory.
 
 ### 4.2 SessionManager.java (~10 lines added)
 
@@ -80,7 +80,7 @@ Add `createDeferredXASession()` interface method for lazy XA session creation.
 
 ### 4.3 ServerConfiguration.java (~30 lines added)
 
-Add XA pooling configuration properties: `ojp.xa.pooling.enabled`, `ojp.xa.maxPoolSize`, `ojp.xa.minIdle`, `ojp.xa.maxWaitMillis`, etc.
+Add XA pooling configuration properties: `ojp.xa.connection.pool.enabled`, `ojp.xa.maxPoolSize`, `ojp.xa.minIdle`, `ojp.xa.maxWaitMillis`, etc.
 
 ### 4.4 XAEndpointServiceImpl.java (NEW ~200 lines)
 
