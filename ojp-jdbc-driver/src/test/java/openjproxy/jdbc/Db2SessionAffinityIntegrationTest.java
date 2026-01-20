@@ -45,23 +45,21 @@ public class Db2SessionAffinityIntegrationTest {
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
         try (Statement stmt = conn.createStatement()) {
-            // Try to drop temp table if it exists, ignore errors
-            try {
-                stmt.execute("DROP TABLE SESSION.temp_session_test");
-            } catch (SQLException e) {
-                // Ignore - table might not exist
-            }
-
             // Create declared global temporary table (this should trigger session affinity)
-            // If table already exists, just truncate it instead
+            // DB2 temporary tables persist for the session - if it already exists, just clear it
             log.debug("Creating DB2 declared global temporary table");
             try {
                 stmt.execute("DECLARE GLOBAL TEMPORARY TABLE temp_session_test (id INT, value VARCHAR(100)) ON COMMIT PRESERVE ROWS");
             } catch (SQLException e) {
-                // If table already exists (SQLSTATE 42727), just truncate it
+                // If table already exists (SQLSTATE 42727), just delete existing data
                 if ("42727".equals(e.getSQLState())) {
-                    log.debug("Temp table already exists, truncating instead");
-                    stmt.execute("DELETE FROM SESSION.temp_session_test");
+                    log.debug("Temp table already exists, clearing data");
+                    try {
+                        stmt.execute("DELETE FROM SESSION.temp_session_test");
+                    } catch (SQLException deleteEx) {
+                        // If delete fails, log and continue - table might be in an inconsistent state
+                        log.warn("Failed to clear existing temp table: {}", deleteEx.getMessage());
+                    }
                 } else {
                     throw e;
                 }
@@ -106,23 +104,21 @@ public class Db2SessionAffinityIntegrationTest {
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
         try (Statement stmt = conn.createStatement()) {
-            // Try to drop if exists
-            try {
-                stmt.execute("DROP TABLE SESSION.temp_complex");
-            } catch (SQLException e) {
-                // Ignore
-            }
-
             // Create temporary table
-            // If table already exists, just truncate it instead
+            // DB2 temporary tables persist for the session - if it already exists, just clear it
             log.debug("Creating complex temp table");
             try {
                 stmt.execute("DECLARE GLOBAL TEMPORARY TABLE temp_complex (id INT NOT NULL, name VARCHAR(100), amount DECIMAL(10,2)) ON COMMIT PRESERVE ROWS");
             } catch (SQLException e) {
-                // If table already exists (SQLSTATE 42727), just truncate it
+                // If table already exists (SQLSTATE 42727), just delete existing data
                 if ("42727".equals(e.getSQLState())) {
-                    log.debug("Temp table already exists, truncating instead");
-                    stmt.execute("DELETE FROM SESSION.temp_complex");
+                    log.debug("Temp table already exists, clearing data");
+                    try {
+                        stmt.execute("DELETE FROM SESSION.temp_complex");
+                    } catch (SQLException deleteEx) {
+                        // If delete fails, log and continue - table might be in an inconsistent state
+                        log.warn("Failed to clear existing temp table: {}", deleteEx.getMessage());
+                    }
                 } else {
                     throw e;
                 }
@@ -185,22 +181,20 @@ public class Db2SessionAffinityIntegrationTest {
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
         try (Statement stmt = conn.createStatement()) {
-            // Try to drop if exists
-            try {
-                stmt.execute("DROP TABLE SESSION.temp_persist");
-            } catch (SQLException e) {
-                // Ignore
-            }
-
             // Create temp table
-            // If table already exists, just truncate it instead
+            // DB2 temporary tables persist for the session - if it already exists, just clear it
             try {
                 stmt.execute("DECLARE GLOBAL TEMPORARY TABLE temp_persist (id INT, data VARCHAR(100)) ON COMMIT PRESERVE ROWS");
             } catch (SQLException e) {
-                // If table already exists (SQLSTATE 42727), just truncate it
+                // If table already exists (SQLSTATE 42727), just delete existing data
                 if ("42727".equals(e.getSQLState())) {
-                    log.debug("Temp table already exists, truncating instead");
-                    stmt.execute("DELETE FROM SESSION.temp_persist");
+                    log.debug("Temp table already exists, clearing data");
+                    try {
+                        stmt.execute("DELETE FROM SESSION.temp_persist");
+                    } catch (SQLException deleteEx) {
+                        // If delete fails, log and continue - table might be in an inconsistent state
+                        log.warn("Failed to clear existing temp table: {}", deleteEx.getMessage());
+                    }
                 } else {
                     throw e;
                 }
