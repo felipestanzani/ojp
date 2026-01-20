@@ -11,6 +11,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assumptions.assumeFalse;
 
@@ -45,7 +46,8 @@ public class Db2SessionAffinityIntegrationTest {
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
         // Generate unique table name to avoid conflicts with previous test runs
-        String tableName = "temp_session_test_" + System.currentTimeMillis();
+        // Use UUID to ensure uniqueness (replace dashes to make valid DB2 identifier)
+        String tableName = "ts_" + UUID.randomUUID().toString().replace("-", "_");
         
         try (Statement stmt = conn.createStatement()) {
             // Create declared global temporary table (this should trigger session affinity)
@@ -91,7 +93,8 @@ public class Db2SessionAffinityIntegrationTest {
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
         // Generate unique table name to avoid conflicts with previous test runs
-        String tableName = "temp_complex_" + System.currentTimeMillis();
+        // Use UUID to ensure uniqueness (replace dashes to make valid DB2 identifier)
+        String tableName = "tc_" + UUID.randomUUID().toString().replace("-", "_");
         
         try (Statement stmt = conn.createStatement()) {
             // Create temporary table
@@ -155,7 +158,8 @@ public class Db2SessionAffinityIntegrationTest {
         Connection conn = DriverManager.getConnection(url, user, pwd);
 
         // Generate unique table name to avoid conflicts with previous test runs
-        String tableName = "temp_persist_" + System.currentTimeMillis();
+        // Use UUID to ensure uniqueness (replace dashes to make valid DB2 identifier)
+        String tableName = "tp_" + UUID.randomUUID().toString().replace("-", "_");
         
         try (Statement stmt = conn.createStatement()) {
             // Create temp table
