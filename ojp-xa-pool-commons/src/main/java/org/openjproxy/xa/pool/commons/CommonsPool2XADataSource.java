@@ -9,6 +9,7 @@ import org.openjproxy.xa.pool.commons.housekeeping.HousekeepingConfig;
 import org.openjproxy.xa.pool.commons.housekeeping.HousekeepingListener;
 import org.openjproxy.xa.pool.commons.housekeeping.LeakDetectionTask;
 import org.openjproxy.xa.pool.commons.housekeeping.LoggingHousekeepingListener;
+import org.openjproxy.xa.pool.commons.housekeeping.ThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -540,12 +541,9 @@ public class CommonsPool2XADataSource implements XADataSource {
         boolean needsExecutor = housekeepingConfig.isLeakDetectionEnabled() || housekeepingConfig.isDiagnosticsEnabled();
         
         if (needsExecutor) {
-            // Create daemon thread executor for housekeeping tasks
-            housekeepingExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
-                Thread t = new Thread(r, "ojp-xa-housekeeping");
-                t.setDaemon(true);
-                return t;
-            });
+            // Create executor for housekeeping tasks
+            // Uses virtual threads when available (Java 21+), falls back to platform daemon threads
+            housekeepingExecutor = ThreadFactory.createHousekeepingExecutor("ojp-xa-housekeeping");
         }
         
         // Initialize leak detection if enabled
