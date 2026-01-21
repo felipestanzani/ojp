@@ -9,13 +9,13 @@ import org.openjproxy.xa.pool.commons.housekeeping.HousekeepingConfig;
 import org.openjproxy.xa.pool.commons.housekeeping.HousekeepingListener;
 import org.openjproxy.xa.pool.commons.housekeeping.LeakDetectionTask;
 import org.openjproxy.xa.pool.commons.housekeeping.LoggingHousekeepingListener;
-import org.openjproxy.xa.pool.commons.housekeeping.ThreadFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sql.XAConnection;
 import javax.sql.XADataSource;
 import java.io.PrintWriter;
+import java.lang.reflect.Method;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
 import java.time.Duration;
@@ -542,7 +542,7 @@ public class CommonsPool2XADataSource implements XADataSource {
         
         if (needsExecutor) {
             // Create virtual thread executor for housekeeping tasks (Java 21+)
-            housekeepingExecutor = ThreadFactory.createHousekeepingExecutor("ojp-xa-housekeeping");
+            housekeepingExecutor = createVirtualThreadExecutor("ojp-xa-housekeeping");
         }
         
         // Initialize leak detection if enabled
@@ -621,6 +621,39 @@ public class CommonsPool2XADataSource implements XADataSource {
         pool.close();
         
         log.info("CommonsPool2XADataSource closed");
+    }
+    
+    /**
+     * Creates a virtual thread executor for housekeeping tasks.
+     * Uses reflection to maintain compatibility with Java 11 compilation target.
+     * Falls back to platform daemon threads for testing on older Java versions.
+     */
+    private ScheduledExecutorService createVirtualThreadExecutor(String threadName) {
+        try {
+            // Use reflection to call Thread.ofVirtual().name(...).factory()
+            Method ofVirtualMethod = Thread.class.getMethod("ofVirtual");
+            Object builder = ofVirtualMethod.invoke(null);
+            
+            Class<?> builderClass = Class.forName("java.lang.Thread$Builder$OfVirtual");
+            Method nameMethod = builderClass.getMethod("name", String.class, long.class);
+            builder = nameMethod.invoke(builder, threadName + "-", 0L);
+            
+            Method factoryMethod = builderClass.getMethod("factory");
+            java.util.concurrent.ThreadFactory virtualThreadFactory = 
+                (java.util.concurrent.ThreadFactory) factoryMethod.invoke(builder);
+            
+            log.info("Using virtual threads for XA pool housekeeping tasks (Java 21+)");
+            return Executors.newSingleThreadScheduledExecutor(virtualThreadFactory);
+            
+        } catch (Exception e) {
+            // Fallback for testing on Java 17
+            log.warn("Virtual threads not available - using platform daemon threads. OJP Server requires Java 21+ for production use.");
+            return Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, threadName);
+                t.setDaemon(true);
+                return t;
+            });
+        }
     }
     
     // XADataSource interface methods (not directly used)
