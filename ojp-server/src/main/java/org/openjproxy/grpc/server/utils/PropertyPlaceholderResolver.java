@@ -43,8 +43,9 @@ public class PropertyPlaceholderResolver {
      * <p>Property names must:
      * <ul>
      *   <li>Start with "ojp.server." or "ojp.client." (whitelisted prefixes)</li>
-     *   <li>Contain only alphanumeric characters, dots, hyphens, and underscores</li>
-     *   <li>Be between 1 and 200 characters in length</li>
+     *   <li>Contain only alphanumeric characters, dots, hyphens, and underscores in the suffix</li>
+     *   <li>Have a suffix (after prefix) between 1 and 200 characters in length</li>
+     *   <li>Total length can be up to 211 characters (11 for prefix + 200 for suffix)</li>
      * </ul>
      * </p>
      * 
@@ -85,7 +86,8 @@ public class PropertyPlaceholderResolver {
                 String errorMsg = String.format(
                     "Security violation: Property name '${%s}' does not match allowed pattern. " +
                     "Property names must start with 'ojp.server.' or 'ojp.client.' and contain only " +
-                    "alphanumeric characters, dots, hyphens, and underscores (max 200 characters).",
+                    "alphanumeric characters, dots, hyphens, and underscores. " +
+                    "The suffix after the prefix must be 1-200 characters.",
                     placeholder
                 );
                 logger.error(errorMsg);

@@ -36,8 +36,9 @@ ${ojp.server.oracle.wallet.location}
 
 **Allowed property names must:**
 - Start with `ojp.server.` or `ojp.client.` (whitelisted prefixes)
-- Contain only alphanumeric characters, dots (`.`), hyphens (`-`), and underscores (`_`)
-- Be between 1 and 200 characters in length (after the prefix)
+- Contain only alphanumeric characters, dots (`.`), hyphens (`-`), and underscores (`_`) in the suffix
+- Have a suffix (after the prefix) between 1 and 200 characters in length
+- Total property name can be up to 211 characters (e.g., "ojp.server." is 11 characters + 200 character suffix)
 
 **Examples of valid property names:**
 ```
@@ -542,8 +543,8 @@ Ensure the property is set either as a JVM property or environment variable befo
 OJP implements strict security validation for property placeholders to protect against malicious attacks if a client is compromised:
 
 1. **Whitelist-based validation**: Only property names starting with `ojp.server.` or `ojp.client.` are allowed
-2. **Character restrictions**: Property names can only contain alphanumeric characters, dots, hyphens, and underscores
-3. **Length limits**: Property names are limited to 200 characters (after the prefix) to prevent DoS attacks
+2. **Character restrictions**: Property names can only contain alphanumeric characters, dots, hyphens, and underscores in the suffix
+3. **Length limits**: Property name suffix (after prefix) is limited to 200 characters to prevent DoS attacks
 4. **Injection prevention**: Special characters like semicolons, pipes, backslashes, and quotes are rejected
 5. **Path traversal protection**: Attempts like `../../../etc/passwd` are blocked
 
