@@ -156,15 +156,7 @@ public class DatasourcePropertiesLoader {
         Properties properties = new Properties();
         
         // Determine environment from system property or environment variable
-        String environment = System.getProperty("ojp.environment");
-        if (environment == null || environment.trim().isEmpty()) {
-            String envVar = System.getenv("OJP_ENVIRONMENT");
-            if (envVar != null && !envVar.trim().isEmpty()) {
-                environment = envVar.trim();
-            }
-        } else {
-            environment = environment.trim();
-        }
+        String environment = getEnvironmentName();
         
         // Try to load environment-specific properties file first
         if (environment != null && !environment.isEmpty()) {
@@ -195,6 +187,31 @@ public class DatasourcePropertiesLoader {
         }
         
         log.debug("No ojp.properties file found, using server defaults");
+        return null;
+    }
+
+    /**
+     * Get the environment name from system property or environment variable.
+     * 
+     * Precedence:
+     * 1. System property: -Dojp.environment
+     * 2. Environment variable: OJP_ENVIRONMENT
+     * 
+     * @return Environment name (trimmed), or null if not specified
+     */
+    private static String getEnvironmentName() {
+        // Check system property first
+        String environment = System.getProperty("ojp.environment");
+        if (environment != null && !environment.trim().isEmpty()) {
+            return environment.trim();
+        }
+        
+        // Fallback to environment variable
+        String envVar = System.getenv("OJP_ENVIRONMENT");
+        if (envVar != null && !envVar.trim().isEmpty()) {
+            return envVar.trim();
+        }
+        
         return null;
     }
 }
