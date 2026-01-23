@@ -62,6 +62,40 @@ java -Dojp.server.logLevel=INFO \
 | `ojp.server.allowedIps`       | `OJP_SERVER_ALLOWEDIPS`       | string  | 0.0.0.0/0 | IP whitelist for gRPC server (comma-separated)          |
 | `ojp.prometheus.allowedIps`   | `OJP_PROMETHEUS_ALLOWEDIPS`   | string  | 0.0.0.0/0 | IP whitelist for Prometheus endpoint (comma-separated)  |
 
+#### SSL/TLS Certificate Path Placeholders
+
+OJP Server supports property placeholders in JDBC URLs to enable server-side SSL/TLS certificate configuration. This allows certificate paths to be configured on the server rather than hardcoded in client connection URLs.
+
+**How it works:**
+1. Client configures URL with placeholders: `jdbc:postgresql://host:5432/db?sslrootcert=${ojp.server.sslrootcert}`
+2. Server resolves placeholders from JVM properties or environment variables
+3. Placeholders are replaced with actual file paths before connecting to the database
+
+**Configuration example:**
+```bash
+# JVM properties
+java -jar ojp-server.jar \
+  -Dojp.server.sslrootcert=/etc/ojp/certs/ca-cert.pem \
+  -Dojp.server.sslcert=/etc/ojp/certs/client-cert.pem
+
+# Environment variables
+export OJP_SERVER_SSLROOTCERT=/etc/ojp/certs/ca-cert.pem
+export OJP_SERVER_SSLCERT=/etc/ojp/certs/client-cert.pem
+```
+
+**Common SSL/TLS properties for different databases:**
+
+| Database   | Common Properties                                                          |
+|------------|---------------------------------------------------------------------------|
+| PostgreSQL | `ojp.server.sslrootcert`, `ojp.server.sslcert`, `ojp.server.sslkey`     |
+| MySQL      | `ojp.server.mysql.truststore`, `ojp.server.mysql.keystore`              |
+| Oracle     | `ojp.server.oracle.wallet.location`                                      |
+| SQL Server | `ojp.server.sqlserver.truststore`, `ojp.server.sqlserver.keystore`      |
+| DB2        | `ojp.server.db2.truststore`, `ojp.server.db2.keystore`                  |
+
+For detailed configuration examples for each database, see [SSL/TLS Certificate Configuration Guide](ssl-tls-certificate-placeholders.md).
+
+
 ### OpenTelemetry Settings
 
 | Property                      | Environment Variable          | Type    | Default | Description                                    |

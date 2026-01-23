@@ -481,6 +481,100 @@ Replace your existing JDBC connection URL by prefixing with `ojp[host:port]_` an
 
 Use the OJP driver class: `org.openjproxy.jdbc.Driver`
 
+### SSL/TLS Certificate Configuration with Placeholders
+
+OJP supports server-side SSL/TLS certificate configuration using property placeholders in JDBC URLs. This allows certificate paths to be configured on the OJP server rather than hardcoded in the client connection URL.
+
+#### Why Use Placeholders?
+
+- **Centralized certificate management**: Certificates reside on the OJP server
+- **Security**: Certificate paths are not exposed in application configuration
+- **Environment flexibility**: Different certificate paths for dev/staging/production
+- **Simplified client configuration**: Clients don't need access to certificate files
+
+#### How to Configure
+
+**Step 1: Configure the JDBC URL with placeholders in `ojp.properties`:**
+
+```properties
+# PostgreSQL with SSL
+mainApp.ojp.datasource.url=jdbc:ojp[localhost:1059(mainApp)]_postgresql://dbhost:5432/mydb?ssl=true&sslmode=verify-full&sslrootcert=${ojp.server.sslrootcert}
+
+# MySQL with SSL
+reporting.ojp.datasource.url=jdbc:ojp[localhost:1059(reporting)]_mysql://dbhost:3306/mydb?useSSL=true&trustCertificateKeyStoreUrl=${ojp.server.mysql.truststore}
+
+# Oracle with wallet
+analytics.ojp.datasource.url=jdbc:ojp[localhost:1059(analytics)]_oracle:thin:@dbhost:2484/myservice?oracle.net.wallet_location=${ojp.server.oracle.wallet.location}
+```
+
+**Step 2: Configure the certificate paths on the OJP server** (see [OJP Server Configuration](ojp-server-configuration.md)):
+
+```bash
+# Using JVM properties
+java -jar ojp-server.jar \
+  -Dojp.server.sslrootcert=/etc/ojp/certs/ca-cert.pem \
+  -Dojp.server.mysql.truststore=file:///etc/ojp/certs/truststore.jks \
+  -Dojp.server.oracle.wallet.location=/etc/ojp/wallet
+
+# Or using environment variables
+export OJP_SERVER_SSLROOTCERT=/etc/ojp/certs/ca-cert.pem
+export OJP_SERVER_MYSQL_TRUSTSTORE=file:///etc/ojp/certs/truststore.jks
+export OJP_SERVER_ORACLE_WALLET_LOCATION=/etc/ojp/wallet
+```
+
+#### Placeholder Format
+
+Placeholders use the format: `${property.name}`
+
+**Naming convention:**
+- Use descriptive names: `${ojp.server.postgresql.sslrootcert}` is better than `${cert1}`
+- Include database type: `${ojp.server.mysql.truststore}`, `${ojp.server.db2.keystore}`
+- Include environment if needed: `${ojp.server.prod.sslrootcert}`
+
+#### Database-Specific Examples
+
+**PostgreSQL:**
+```properties
+ojp.datasource.url=jdbc:ojp[localhost:1059]_postgresql://host:5432/db?\
+ssl=true&sslmode=verify-full&\
+sslrootcert=${ojp.server.sslrootcert}&\
+sslcert=${ojp.server.sslcert}&\
+sslkey=${ojp.server.sslkey}
+```
+
+**MySQL/MariaDB:**
+```properties
+ojp.datasource.url=jdbc:ojp[localhost:1059]_mysql://host:3306/db?\
+useSSL=true&requireSSL=true&\
+trustCertificateKeyStoreUrl=${ojp.server.mysql.truststore}&\
+trustCertificateKeyStorePassword=${ojp.server.mysql.truststorePassword}
+```
+
+**Oracle:**
+```properties
+ojp.datasource.url=jdbc:ojp[localhost:1059]_oracle:thin:@host:2484/service?\
+oracle.net.wallet_location=${ojp.server.oracle.wallet.location}&\
+oracle.net.ssl_server_dn_match=true
+```
+
+**SQL Server:**
+```properties
+ojp.datasource.url=jdbc:ojp[localhost:1059]_sqlserver://host:1433;\
+databaseName=mydb;encrypt=true;\
+trustStore=${ojp.server.sqlserver.truststore};\
+trustStorePassword=${ojp.server.sqlserver.truststorePassword}
+```
+
+**DB2:**
+```properties
+ojp.datasource.url=jdbc:ojp[localhost:1059]_db2://host:50001/mydb:\
+sslConnection=true;\
+sslTrustStoreLocation=${ojp.server.db2.truststore};\
+sslTrustStorePassword=${ojp.server.db2.truststorePassword};
+```
+
+For comprehensive SSL/TLS configuration examples and best practices, see the [SSL/TLS Certificate Configuration Guide](ssl-tls-certificate-placeholders.md).
+
 ### DataSource Parameter Usage
 
 The dataSource specification in parentheses within the OJP connection section specifies which configuration to use:
@@ -533,5 +627,6 @@ The multi-datasource feature is fully backward compatible:
 
 ## Related Documentation
 
+- **[SSL/TLS Certificate Configuration Guide](ssl-tls-certificate-placeholders.md)** - Complete guide for configuring SSL/TLS certificates with property placeholders
 - **[OJP Server Configuration](ojp-server-configuration.md)** - Server startup options and runtime configuration
 - **[Example Configuration Properties](ojp-server-example.properties)** - Complete example configuration file with all settings
