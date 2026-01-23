@@ -65,7 +65,7 @@ public class IpWhitelistingInterceptorTest {
         
         // Verify the status is PERMISSION_DENIED
         assertEquals(Status.Code.PERMISSION_DENIED, statusCaptor.getValue().getCode());
-        assertTrue(statusCaptor.getValue().getDescription().contains("not in whitelist"));
+        assertEquals("Access denied", statusCaptor.getValue().getDescription());
     }
     
     @Test

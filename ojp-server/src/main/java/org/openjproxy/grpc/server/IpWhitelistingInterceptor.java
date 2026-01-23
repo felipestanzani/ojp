@@ -39,13 +39,13 @@ public class IpWhitelistingInterceptor implements ServerInterceptor {
         // Check if IP is allowed
         if (!IpWhitelistValidator.isIpAllowed(clientIp, allowedIps)) {
             // Log warning for audit with relevant information
-            logger.warn("IP whitelisting access denied: clientIp={}, method={}, timestamp={}", 
-                    clientIp, methodName, System.currentTimeMillis());
+            logger.warn("IP whitelisting access denied: clientIp={}, method={}", 
+                    clientIp, methodName);
             
             // Close the call with PERMISSION_DENIED status
             call.close(
                 Status.PERMISSION_DENIED
-                    .withDescription("Access denied: Client IP not in whitelist"),
+                    .withDescription("Access denied"),
                 new Metadata()
             );
             
