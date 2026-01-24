@@ -345,12 +345,31 @@ public class ServerConfiguration {
         logger.info("TLS Configuration:");
         logger.info("  TLS Enabled: {}", tlsEnabled);
         if (tlsEnabled) {
-            logger.info("  TLS Keystore Path: {}", tlsKeystorePath != null ? tlsKeystorePath : "not configured (using JVM default)");
-            logger.info("  TLS Truststore Path: {}", tlsTruststorePath != null ? tlsTruststorePath : "not configured (using JVM default)");
+            logger.info("  TLS Keystore Path: {}", maskPath(tlsKeystorePath));
+            logger.info("  TLS Truststore Path: {}", maskPath(tlsTruststorePath));
             logger.info("  TLS Client Auth Required (mTLS): {}", tlsClientAuthRequired);
             logger.info("  TLS Keystore Type: {}", tlsKeystoreType);
             logger.info("  TLS Truststore Type: {}", tlsTruststoreType);
         }
+    }
+    
+    /**
+     * Masks sensitive path information for logging.
+     * Shows whether path is configured without revealing full path.
+     * 
+     * @param path The file path to mask
+     * @return Masked path representation
+     */
+    private String maskPath(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            return "not configured (using JVM default)";
+        }
+        // Show only the filename, not the full path
+        int lastSeparator = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (lastSeparator >= 0 && lastSeparator < path.length() - 1) {
+            return "***/" + path.substring(lastSeparator + 1);
+        }
+        return "configured";
     }
 
     // Getters

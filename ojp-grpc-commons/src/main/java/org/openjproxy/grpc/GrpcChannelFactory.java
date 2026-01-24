@@ -2,6 +2,7 @@ package org.openjproxy.grpc;
 
 import org.openjproxy.config.GrpcClientConfig;
 import org.openjproxy.config.TlsConfig;
+import org.openjproxy.config.TlsConfigurationException;
 import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 import io.grpc.netty.GrpcSslContexts;
@@ -12,7 +13,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.KeyManagerFactory;
-import javax.net.ssl.SSLException;
 import javax.net.ssl.TrustManagerFactory;
 import java.io.IOException;
 /**
@@ -173,30 +173,36 @@ public class GrpcChannelFactory {
      * 
      * @param tlsConfig TLS configuration
      * @return SslContext for the gRPC channel
-     * @throws SSLException if SSL context cannot be created
+     * @throws TlsConfigurationException if SSL context cannot be created
      */
-    private static SslContext buildSslContext(TlsConfig tlsConfig) throws Exception {
-        SslContextBuilder sslContextBuilder = GrpcSslContexts.forClient();
-        
-        // Configure truststore (for verifying server certificate)
-        if (tlsConfig.hasTruststorePath()) {
-            logger.info("Configuring client with custom truststore: {}", tlsConfig.getTruststorePath());
-            TrustManagerFactory trustManagerFactory = tlsConfig.createTrustManagerFactory();
-            sslContextBuilder.trustManager(trustManagerFactory);
-        } else {
-            logger.info("Using JVM default truststore for server certificate verification");
-            // Use system default truststore
+    private static SslContext buildSslContext(TlsConfig tlsConfig) throws TlsConfigurationException {
+        try {
+            SslContextBuilder sslContextBuilder = GrpcSslContexts.forClient();
+            
+            // Configure truststore (for verifying server certificate)
+            if (tlsConfig.hasTruststorePath()) {
+                logger.info("Configuring client with custom truststore");
+                TrustManagerFactory trustManagerFactory = tlsConfig.createTrustManagerFactory();
+                sslContextBuilder.trustManager(trustManagerFactory);
+            } else {
+                logger.info("Using JVM default truststore for server certificate verification");
+                // Use system default truststore
+            }
+            
+            // Configure keystore (for client certificate - mTLS)
+            if (tlsConfig.hasKeystorePath()) {
+                logger.info("Configuring client with mTLS using keystore");
+                KeyManagerFactory keyManagerFactory = tlsConfig.createKeyManagerFactory();
+                sslContextBuilder.keyManager(keyManagerFactory);
+            } else {
+                logger.info("No client certificate configured - server TLS only (not mTLS)");
+            }
+            
+            return sslContextBuilder.build();
+        } catch (TlsConfigurationException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new TlsConfigurationException("Failed to build SSL context for gRPC client", e);
         }
-        
-        // Configure keystore (for client certificate - mTLS)
-        if (tlsConfig.hasKeystorePath()) {
-            logger.info("Configuring client with mTLS using keystore: {}", tlsConfig.getKeystorePath());
-            KeyManagerFactory keyManagerFactory = tlsConfig.createKeyManagerFactory();
-            sslContextBuilder.keyManager(keyManagerFactory);
-        } else {
-            logger.info("No client certificate configured - server TLS only (not mTLS)");
-        }
-        
-        return sslContextBuilder.build();
     }
 }

@@ -172,26 +172,34 @@ public class TlsConfig {
      * Creates a KeyManagerFactory from the configured keystore.
      * 
      * @return KeyManagerFactory instance
-     * @throws Exception if keystore cannot be loaded or KeyManagerFactory cannot be initialized
+     * @throws TlsConfigurationException if keystore cannot be loaded or KeyManagerFactory cannot be initialized
      */
-    public KeyManagerFactory createKeyManagerFactory() throws Exception {
-        KeyStore keyStore = loadKeyStore();
-        KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-        keyManagerFactory.init(keyStore, keystorePassword != null ? keystorePassword.toCharArray() : null);
-        return keyManagerFactory;
+    public KeyManagerFactory createKeyManagerFactory() throws TlsConfigurationException {
+        try {
+            KeyStore keyStore = loadKeyStore();
+            KeyManagerFactory keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
+            keyManagerFactory.init(keyStore, keystorePassword != null ? keystorePassword.toCharArray() : null);
+            return keyManagerFactory;
+        } catch (Exception e) {
+            throw new TlsConfigurationException("Failed to create KeyManagerFactory from keystore: " + keystorePath, e);
+        }
     }
     
     /**
      * Creates a TrustManagerFactory from the configured truststore.
      * 
      * @return TrustManagerFactory instance
-     * @throws Exception if truststore cannot be loaded or TrustManagerFactory cannot be initialized
+     * @throws TlsConfigurationException if truststore cannot be loaded or TrustManagerFactory cannot be initialized
      */
-    public TrustManagerFactory createTrustManagerFactory() throws Exception {
-        KeyStore trustStore = loadTrustStore();
-        TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
-        trustManagerFactory.init(trustStore);
-        return trustManagerFactory;
+    public TrustManagerFactory createTrustManagerFactory() throws TlsConfigurationException {
+        try {
+            KeyStore trustStore = loadTrustStore();
+            TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm());
+            trustManagerFactory.init(trustStore);
+            return trustManagerFactory;
+        } catch (Exception e) {
+            throw new TlsConfigurationException("Failed to create TrustManagerFactory from truststore: " + truststorePath, e);
+        }
     }
     
     /**
