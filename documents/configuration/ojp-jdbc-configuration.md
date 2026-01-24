@@ -526,10 +526,24 @@ export OJP_SERVER_ORACLE_WALLET_LOCATION=/etc/ojp/wallet
 
 Placeholders use the format: `${property.name}`
 
+**Security Note**: Property names are validated on the server to prevent attacks if a client is compromised. Only property names starting with `ojp.server.` or `ojp.client.` are allowed, and they must contain only alphanumeric characters, dots, hyphens, and underscores.
+
 **Naming convention:**
+- **Always use the ojp.server prefix**: `${ojp.server.sslrootcert}` (required for validation)
 - Use descriptive names: `${ojp.server.postgresql.sslrootcert}` is better than `${cert1}`
 - Include database type: `${ojp.server.mysql.truststore}`, `${ojp.server.db2.keystore}`
 - Include environment if needed: `${ojp.server.prod.sslrootcert}`
+- Use only allowed characters: alphanumeric, dots (`.`), hyphens (`-`), underscores (`_`)
+- Keep suffix under 200 characters
+
+**Why these rules matter**: If a client application is compromised, attackers could inject malicious property names. The validation rules prevent:
+- Access to system properties like `${java.home}`
+- Command injection through special characters like `;`, `|`, `&`
+- Path traversal attacks like `../../../etc/passwd`
+- SQL injection attempts
+- Denial of service through extremely long names
+
+For complete security details, see the [SSL/TLS Certificate Configuration Guide](ssl-tls-certificate-placeholders.md).
 
 #### Database-Specific Examples
 

@@ -34,30 +34,59 @@ ${ojp.server.oracle.wallet.location}
 
 **Important**: For security, property names in placeholders are validated against a whitelist pattern to prevent unauthorized access to system properties if a client is compromised.
 
+#### Why Placeholder Validation is Critical
+
+If a client application is compromised by an attacker, they could potentially modify the JDBC URL to inject malicious property placeholders. Without validation, this could lead to:
+
+1. **System Property Exposure**: Attackers could read sensitive system properties like `${java.home}`, `${user.home}`, `${user.name}`, potentially revealing system configuration
+2. **Command Injection**: Special characters could be used to execute arbitrary commands on the server
+3. **SQL Injection**: Malicious SQL could be injected through certificate path parameters
+4. **Path Traversal**: Attackers could access files outside intended directories using patterns like `../../../etc/passwd`
+5. **Denial of Service**: Extremely long property names could consume server resources
+
+To prevent these attacks, OJP implements strict whitelist-based validation that only allows property names following secure patterns.
+
+#### Validation Rules
+
 **Allowed property names must:**
 - Start with `ojp.server.` or `ojp.client.` (whitelisted prefixes)
 - Contain only alphanumeric characters, dots (`.`), hyphens (`-`), and underscores (`_`) in the suffix
 - Have a suffix (after the prefix) between 1 and 200 characters in length
 - Total property name can be up to 211 characters (e.g., "ojp.server." is 11 characters + 200 character suffix)
 
+#### Attack Prevention Examples
+
 **Examples of valid property names:**
 ```
-${ojp.server.sslrootcert}           ✓ Valid
-${ojp.server.mysql.truststore}      ✓ Valid
-${ojp.client.config-value}          ✓ Valid
-${ojp.server.ssl_root_cert.path}    ✓ Valid
+${ojp.server.sslrootcert}           ✓ Valid - follows whitelist pattern
+${ojp.server.mysql.truststore}      ✓ Valid - uses allowed characters
+${ojp.client.config-value}          ✓ Valid - hyphens and underscores allowed
+${ojp.server.ssl_root_cert.path}    ✓ Valid - dots and underscores allowed
 ```
 
-**Examples of invalid property names (rejected for security):**
+**Examples of blocked attacks:**
 ```
-${java.home}                        ✗ Invalid - not whitelisted prefix
-${user.home}                        ✗ Invalid - not whitelisted prefix
-${ojp.server.cert;rm -rf /}         ✗ Invalid - contains semicolon
-${ojp.server.cert../../../passwd}   ✗ Invalid - path traversal attempt
-${ojp.server.cert|command}          ✗ Invalid - contains pipe character
+${java.home}                        ✗ Blocked - System property exposure attempt
+${user.home}                        ✗ Blocked - System property exposure attempt
+${os.name}                          ✗ Blocked - System property exposure attempt
+${ojp.server.cert;rm -rf /}         ✗ Blocked - Command injection with semicolon
+${ojp.server.cert|malicious}        ✗ Blocked - Command injection with pipe
+${ojp.server.cert&command}          ✗ Blocked - Command injection with ampersand
+${ojp.server.cert../../../passwd}   ✗ Blocked - Path traversal attempt
+${ojp.server.cert$(exploit)}        ✗ Blocked - Command substitution attempt
+${ojp.server.cert;DROP TABLE}       ✗ Blocked - SQL injection attempt
+${ojp.server.cert'OR'1'='1}         ✗ Blocked - SQL injection with quotes
 ```
 
-If an invalid property name is detected, the server will throw a `SecurityException` and log the attempt, preventing the connection from being established.
+#### Security Response
+
+If an invalid property name is detected, the server will:
+1. **Reject the connection** - The connection attempt is immediately terminated
+2. **Throw SecurityException** - A `SecurityException` is thrown with details about the violation
+3. **Log the violation** - The security violation is logged with the attempted property name for audit purposes
+4. **Prevent further processing** - No database connection is established, protecting the server
+
+This multi-layered approach ensures that even if a client is fully compromised, attackers cannot use property placeholders to attack the OJP server or access unauthorized system resources.
 
 ## Configuration Methods
 
@@ -538,17 +567,65 @@ Ensure the property is set either as a JVM property or environment variable befo
 
 ## Security Considerations
 
+### Why Secure Placeholder Naming is Important
+
+When defining property placeholders for SSL/TLS certificate paths, it's crucial to understand that these placeholders are sent from the client to the OJP server as part of the JDBC URL. If a client application is compromised, attackers could manipulate these placeholders to:
+
+- **Access sensitive system information** by injecting system property names
+- **Execute arbitrary commands** through shell injection attacks
+- **Read unauthorized files** via path traversal techniques
+- **Inject malicious SQL** or commands into the server
+- **Cause denial of service** by sending extremely long property names
+
+This is why OJP implements strict validation rules for property placeholder names.
+
 ### Placeholder Validation
 
 OJP implements strict security validation for property placeholders to protect against malicious attacks if a client is compromised:
 
 1. **Whitelist-based validation**: Only property names starting with `ojp.server.` or `ojp.client.` are allowed
+   - This prevents access to system properties like `java.home`, `user.home`, `os.name`
+   - Ensures only OJP-specific configuration can be accessed
+
 2. **Character restrictions**: Property names can only contain alphanumeric characters, dots, hyphens, and underscores in the suffix
+   - Blocks special characters used in command injection (`;`, `|`, `&`, `$`, etc.)
+   - Prevents SQL injection characters (`'`, `"`, `=`, etc.)
+   - Stops path traversal characters (`/`, `\`, etc.)
+
 3. **Length limits**: Property name suffix (after prefix) is limited to 200 characters to prevent DoS attacks
+   - Prevents memory exhaustion from extremely long property names
+   - Limits resource consumption during validation and resolution
+
 4. **Injection prevention**: Special characters like semicolons, pipes, backslashes, and quotes are rejected
+   - Blocks command injection: `${ojp.server.cert;rm -rf /}`
+   - Blocks SQL injection: `${ojp.server.cert';DROP TABLE}`
+   - Blocks shell expansion: `${ojp.server.cert$(malicious)}`
+
 5. **Path traversal protection**: Attempts like `../../../etc/passwd` are blocked
+   - Prevents directory traversal attacks
+   - Ensures only intended property names are accessed
 
 If an invalid property name is detected, the server throws a `SecurityException`, logs the security violation, and rejects the connection attempt.
+
+### Best Practices for Defining Placeholders
+
+When defining property placeholders in your client configuration:
+
+1. **Use descriptive, clear names**: `ojp.server.postgresql.sslrootcert` instead of `ojp.server.cert1`
+2. **Include the database type**: `ojp.server.mysql.truststore`, `ojp.server.oracle.wallet`
+3. **Include the environment if needed**: `ojp.server.prod.sslcert`, `ojp.server.dev.sslkey`
+4. **Use only allowed characters**: Stick to alphanumeric, dots, hyphens, and underscores
+5. **Keep names reasonable length**: Stay well under the 200 character suffix limit
+6. **Always use the ojp.server prefix**: This ensures validation passes and clarifies the property scope
+
+**Example of well-defined placeholders:**
+```properties
+# Good: Clear, descriptive, follows all rules
+ojp.datasource.url=jdbc:ojp[localhost:1059]_postgresql://host:5432/db?\
+  sslrootcert=${ojp.server.postgresql.prod.ca-cert}&\
+  sslcert=${ojp.server.postgresql.prod.client-cert}&\
+  sslkey=${ojp.server.postgresql.prod.client-key}
+```
 
 ### Certificate Management
 
