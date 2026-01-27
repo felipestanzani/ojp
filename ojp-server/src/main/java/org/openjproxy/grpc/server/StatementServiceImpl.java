@@ -340,14 +340,14 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
         } catch (SQLDataException e) {
             circuitBreaker.onFailure(stmtHash, e);
-            log.error("SQL data failure during update execution: " + e.getMessage(), e);
+            log.error("SQL data failure during update execution: {}", e.getMessage(), e);
             sendSQLExceptionMetadata(e, responseObserver, SqlErrorType.SQL_DATA_EXCEPTION);
         } catch (SQLException e) {
             circuitBreaker.onFailure(stmtHash, e);
-            log.error("Failure during update execution: " + e.getMessage(), e);
+            log.error("Failure during update execution: {}", e.getMessage(), e);
             sendSQLExceptionMetadata(e, responseObserver);
         } catch (Exception e) {
-            log.error("Unexpected failure during update execution: " + e.getMessage(), e);
+            log.error("Unexpected failure during update execution: {}", e.getMessage(), e);
             if (e.getCause() instanceof SQLException sqlException) {
                 circuitBreaker.onFailure(stmtHash, sqlException);
                 sendSQLExceptionMetadata(sqlException, responseObserver);
@@ -594,7 +594,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             log.error("Failure during query execution: {}", e.getMessage(), e);
             sendSQLExceptionMetadata(e, responseObserver);
         } catch (Exception e) {
-            log.error("Unexpected failure during query execution: " + e.getMessage(), e);
+            log.error("Unexpected failure during query execution: {}", e.getMessage(), e);
             if (e.getCause() instanceof SQLException sqlException) {
                 circuitBreaker.onFailure(stmtHash, sqlException);
                 sendSQLExceptionMetadata(sqlException, responseObserver);
@@ -663,7 +663,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             ConnectionSessionDTO dto = this.sessionConnection(request.getSession(), false);
             this.handleResultSet(dto.getSession(), request.getResultSetUUID(), responseObserver);
         } catch (SQLException e) {
-            log.error("Failure fetch next rows for result set: " + e.getMessage(), e);
+            log.error("Failure fetch next rows for result set: {}", e.getMessage(), e);
             sendSQLExceptionMetadata(e, responseObserver);
         }
     }
@@ -1023,7 +1023,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         if (clob != null) {
             String clobUUID = UUID.randomUUID().toString();
             // CLOB needs to be prefixed as per it can be read in the JDBC driver by
-            // getString method and it would be valid to return just a UUID as string
+            // getString method, and it would be valid to return just a UUID as string
             this.sessionManager.registerLob(session, clob, clobUUID);
             return CommonConstants.OJP_CLOB_PREFIX + clobUUID;
         }
@@ -1058,7 +1058,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     private Object processDefaultColumn(ResultSet rs, int columnIndex, String colTypeName, int colType) throws SQLException {
         Object currentValue = rs.getObject(columnIndex + 1);
         // com.microsoft.sqlserver.jdbc.DateTimeOffset special case as per it does not
-        // implement any standar java.sql interface.
+        // implement any standard java.sql interface.
         if ("datetimeoffset".equalsIgnoreCase(colTypeName) && colType == -155) {
             return DateTimeUtils.extractOffsetDateTime(currentValue);
         }
@@ -1131,7 +1131,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         DbName dbName = DatabaseUtils.resolveDbName(rs.getStatement().getConnection().getMetaData().getURL());
         // Only used if result set contains LOBs in SQL Server and DB2 (if LOB's
         // present), so cursor is not read in advance,
-        // every row has to be requested by the jdbc client.
+        // every row has to be requested by the JDBC client.
         String[] resultSetMode = {""};
         boolean resultSetMetadataCollected = false;
 
