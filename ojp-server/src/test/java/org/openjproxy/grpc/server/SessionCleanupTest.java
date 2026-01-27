@@ -47,7 +47,7 @@ class SessionCleanupTest {
         long initialActivityTime = session.getLastActivityTime();
 
         // Wait a bit and update activity
-        Thread.sleep(100);
+        Thread.sleep(100); //NOSONAR
         session.updateActivity();
 
         // Verify activity time was updated
@@ -67,7 +67,7 @@ class SessionCleanupTest {
         assertFalse(session.isInactive(1000)); // 1 second timeout
 
         // Wait and check again
-        Thread.sleep(TEST_WAIT_MS);
+        Thread.sleep(TEST_WAIT_MS); //NOSONAR
         assertTrue(session.isInactive(TEST_TIMEOUT_MS)); // 100ms timeout
         assertFalse(session.isInactive(1000)); // 1 second timeout
     }
@@ -85,7 +85,7 @@ class SessionCleanupTest {
         long duration1 = session.getInactiveDuration();
         assertTrue(duration1 >= 0);
 
-        Thread.sleep(100);
+        Thread.sleep(100); //NOSONAR
         long duration2 = session.getInactiveDuration();
         assertTrue(duration2 > duration1);
 
@@ -152,7 +152,7 @@ class SessionCleanupTest {
         SessionInfo inactiveSession = sessionManager.createSession("inactive-client", mockConnection);
 
         // Make one session inactive by not updating its activity
-        Thread.sleep(TEST_WAIT_MS);
+        Thread.sleep(TEST_WAIT_MS); //NOSONAR
 
         // Update activity on the active session only
         sessionManager.updateSessionActivity(activeSession);
@@ -180,7 +180,7 @@ class SessionCleanupTest {
 
         // Keep updating activity
         for (int i = 0; i < 5; i++) {
-            Thread.sleep(50);
+            Thread.sleep(50); //NOSONAR
             sessionManager.updateSessionActivity(sessionInfo);
         }
 
@@ -218,7 +218,7 @@ class SessionCleanupTest {
         }
 
         // Wait for all to become inactive
-        Thread.sleep(TEST_WAIT_MS);
+        Thread.sleep(TEST_WAIT_MS); //NOSONAR
 
         // Create cleanup task with 100ms timeout
         SessionCleanupTask cleanupTask = new SessionCleanupTask(sessionManager, TEST_TIMEOUT_MS);

@@ -1,10 +1,13 @@
 package org.openjproxy.grpc.server.utils;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Unit tests for PropertyPlaceholderResolver.
@@ -23,20 +26,7 @@ class PropertyPlaceholderResolverTest {
         System.clearProperty("ojp.server.sslTrustStoreLocation");
         System.clearProperty("ojp.client.config");
     }
-    
-    @AfterEach
-    void tearDown() {
-        // Clean up test properties after each test
-        System.clearProperty("ojp.server.sslrootcert");
-        System.clearProperty("ojp.server.sslcert");
-        System.clearProperty("ojp.server.sslkey");
-        System.clearProperty("ojp.server.test");
-        System.clearProperty("ojp.server.trustStore");
-        System.clearProperty("ojp.server.trustStorePassword");
-        System.clearProperty("ojp.server.sslTrustStoreLocation");
-        System.clearProperty("ojp.client.config");
-    }
-    
+
     @Test
     void testResolveSinglePlaceholder() {
         System.setProperty("ojp.server.sslrootcert", "/etc/ojp/certs/ca-cert.pem");
@@ -89,9 +79,7 @@ class PropertyPlaceholderResolverTest {
     void testResolveMissingPlaceholderThrowsException() {
         String input = "jdbc:postgresql://host:5432/db?sslrootcert=${ojp.server.sslrootcert}";
         
-        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> {
-            PropertyPlaceholderResolver.resolvePlaceholders(input);
-        });
+        IllegalArgumentException exception = assertThrows(IllegalArgumentException.class, () -> PropertyPlaceholderResolver.resolvePlaceholders(input));
         
         assertTrue(exception.getMessage().contains("ojp.server.sslrootcert"));
         assertTrue(exception.getMessage().contains("OJP_SERVER_SSLROOTCERT"));
@@ -297,9 +285,7 @@ class PropertyPlaceholderResolverTest {
     void testSecurityExceptionForMaliciousPropertyName() {
         String input = "jdbc:postgresql://host:5432/db?param=${java.home}";
         
-        SecurityException exception = assertThrows(SecurityException.class, () -> {
-            PropertyPlaceholderResolver.resolvePlaceholders(input);
-        });
+        SecurityException exception = assertThrows(SecurityException.class, () -> PropertyPlaceholderResolver.resolvePlaceholders(input));
         
         assertTrue(exception.getMessage().contains("Security violation"));
         assertTrue(exception.getMessage().contains("java.home"));
@@ -310,9 +296,7 @@ class PropertyPlaceholderResolverTest {
     void testSecurityExceptionForSystemPropertyAccess() {
         String input = "jdbc:postgresql://host:5432/db?param=${user.home}";
         
-        SecurityException exception = assertThrows(SecurityException.class, () -> {
-            PropertyPlaceholderResolver.resolvePlaceholders(input);
-        });
+        SecurityException exception = assertThrows(SecurityException.class, () -> PropertyPlaceholderResolver.resolvePlaceholders(input));
         
         assertTrue(exception.getMessage().contains("Security violation"));
         assertTrue(exception.getMessage().contains("user.home"));
@@ -322,9 +306,7 @@ class PropertyPlaceholderResolverTest {
     void testSecurityExceptionForArbitraryProperty() {
         String input = "jdbc:postgresql://host:5432/db?param=${malicious.property}";
         
-        SecurityException exception = assertThrows(SecurityException.class, () -> {
-            PropertyPlaceholderResolver.resolvePlaceholders(input);
-        });
+        SecurityException exception = assertThrows(SecurityException.class, () -> PropertyPlaceholderResolver.resolvePlaceholders(input));
         
         assertTrue(exception.getMessage().contains("Security violation"));
         assertTrue(exception.getMessage().contains("malicious.property"));
@@ -334,9 +316,7 @@ class PropertyPlaceholderResolverTest {
     void testSecurityExceptionForCommandInjectionAttempt() {
         String input = "jdbc:postgresql://host:5432/db?param=${ojp.server.cert;rm -rf /}";
         
-        SecurityException exception = assertThrows(SecurityException.class, () -> {
-            PropertyPlaceholderResolver.resolvePlaceholders(input);
-        });
+        SecurityException exception = assertThrows(SecurityException.class, () -> PropertyPlaceholderResolver.resolvePlaceholders(input));
         
         assertTrue(exception.getMessage().contains("Security violation"));
     }
@@ -345,9 +325,7 @@ class PropertyPlaceholderResolverTest {
     void testSecurityExceptionForPathTraversalAttempt() {
         String input = "jdbc:postgresql://host:5432/db?param=${ojp.server../../../etc/passwd}";
         
-        SecurityException exception = assertThrows(SecurityException.class, () -> {
-            PropertyPlaceholderResolver.resolvePlaceholders(input);
-        });
+        SecurityException exception = assertThrows(SecurityException.class, () -> PropertyPlaceholderResolver.resolvePlaceholders(input));
         
         assertTrue(exception.getMessage().contains("Security violation"));
     }
