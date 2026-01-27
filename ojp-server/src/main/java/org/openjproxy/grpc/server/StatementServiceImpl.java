@@ -654,6 +654,172 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     }
 
     /**
+     * Reuses an existing session connection if available.
+     * Validates the connection and sets the database name on the DTO builder.
+     *
+     * @param sessionInfo the session information
+     * @param dtoBuilder   the DTO builder to update
+     * @return the connection from the existing session
+     * @throws SQLException if connection not found or closed
+     */
+    private Connection reuseExistingSessionConnection(SessionInfo sessionInfo,
+            ConnectionSessionDTO.ConnectionSessionDTOBuilder dtoBuilder) throws SQLException {
+        Connection conn = this.sessionManager.getConnection(sessionInfo);
+        if (conn == null) {
+            throw new SQLException("Connection not found for this sessionInfo");
+        }
+        dtoBuilder.dbName(DatabaseUtils.resolveDbName(conn.getMetaData().getURL()));
+        if (conn.isClosed()) {
+            throw new SQLException("Connection is closed");
+        }
+        return conn;
+    }
+
+    /**
+     * Creates an unpooled XA connection from the XADataSource.
+     * Registers the XAConnection as a session attribute for XA operations.
+     *
+     * @param sessionInfo     the session information
+     * @param connHash        the connection hash
+     * @param xaDataSource    the XA data source
+     * @param startSessionIfNone if true, creates a session if none exists
+     * @param dtoBuilder      the DTO builder to update
+     * @return the connection from the XA connection
+     * @throws SQLException if connection creation fails
+     */
+    private Connection createUnpooledXaConnection(SessionInfo sessionInfo, String connHash,
+            XADataSource xaDataSource, boolean startSessionIfNone,
+            ConnectionSessionDTO.ConnectionSessionDTOBuilder dtoBuilder) throws SQLException {
+        try {
+            log.debug("Creating unpooled XAConnection for hash: {}", connHash);
+            XAConnection xaConnection = xaDataSource.getXAConnection();
+            Connection conn = xaConnection.getConnection();
+
+            // Store the XAConnection in session for XA operations
+            if (startSessionIfNone) {
+                SessionInfo updatedSession = this.sessionManager.createSession(sessionInfo.getClientUUID(), conn);
+                // Store XAConnection as an attribute for XA operations
+                this.sessionManager.registerAttr(updatedSession, "xaConnection", xaConnection);
+                dtoBuilder.session(updatedSession);
+            }
+            log.debug("Successfully created unpooled XAConnection for hash: {}", connHash);
+            return conn;
+        } catch (SQLException e) {
+            log.error("Failed to create unpooled XAConnection for hash: {}. Error: {}", connHash, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Creates an XA connection based on the connection hash.
+     * Handles both unpooled and pooled XA modes.
+     *
+     * @param sessionInfo        the session information
+     * @param connHash           the connection hash
+     * @param startSessionIfNone if true, creates a session if none exists
+     * @param dtoBuilder         the DTO builder to update
+     * @return the XA connection
+     * @throws SQLException if connection creation fails or session is missing
+     */
+    private Connection createXaConnection(SessionInfo sessionInfo, String connHash, boolean startSessionIfNone,
+            ConnectionSessionDTO.ConnectionSessionDTOBuilder dtoBuilder) throws SQLException {
+        XADataSource xaDataSource = this.xaDataSourceMap.get(connHash);
+
+        if (xaDataSource != null) {
+            // Unpooled XA mode: create XAConnection on demand
+            return createUnpooledXaConnection(sessionInfo, connHash, xaDataSource, startSessionIfNone, dtoBuilder);
+        } else {
+            // Pooled XA mode - should already have a session created in connect()
+            // This shouldn't happen as XA sessions are created eagerly
+            throw new SQLException("XA session should already exist. Session UUID is missing.");
+        }
+    }
+
+    /**
+     * Creates an unpooled regular connection via DriverManager.
+     *
+     * @param connHash the connection hash
+     * @return the unpooled connection
+     * @throws SQLException if connection creation fails
+     */
+    private Connection createUnpooledRegularConnection(String connHash) throws SQLException {
+        UnpooledConnectionDetails unpooledDetails = this.unpooledConnectionDetailsMap.get(connHash);
+        if (unpooledDetails == null) {
+            throw new SQLException("Unpooled connection details not found for hash: " + connHash);
+        }
+
+        try {
+            log.debug("Creating unpooled (passthrough) connection for hash: {}", connHash);
+            Connection conn = DriverManager.getConnection(
+                    unpooledDetails.getUrl(),
+                    unpooledDetails.getUsername(),
+                    unpooledDetails.getPassword());
+            log.debug("Successfully created unpooled connection for hash: {}", connHash);
+            return conn;
+        } catch (SQLException e) {
+            log.error("Failed to create unpooled connection for hash: {}. Error: {}", connHash, e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Creates a pooled regular connection from the datasource.
+     *
+     * @param connHash the connection hash
+     * @return the pooled connection
+     * @throws SQLException if datasource not found or connection acquisition fails
+     */
+    private Connection createPooledRegularConnection(String connHash) throws SQLException {
+        DataSource dataSource = this.datasourceMap.get(connHash);
+        if (dataSource == null) {
+            throw new SQLException("No datasource found for connection hash: " + connHash);
+        }
+
+        try {
+            // Use enhanced connection acquisition with timeout protection
+            Connection conn = ConnectionAcquisitionManager.acquireConnection(dataSource, connHash);
+            log.debug("Successfully acquired connection from pool for hash: {}", connHash);
+            return conn;
+        } catch (SQLException e) {
+            log.error("Failed to acquire connection from pool for hash: {}. Error: {}", connHash, e.getMessage());
+            // Re-throw the enhanced exception from ConnectionAcquisitionManager
+            throw e;
+        }
+    }
+
+    /**
+     * Creates a regular (non-XA) connection based on connection mode.
+     * Handles both unpooled and pooled modes, and creates session if needed.
+     *
+     * @param sessionInfo        the session information
+     * @param connHash           the connection hash
+     * @param startSessionIfNone if true, creates a session if none exists
+     * @param dtoBuilder         the DTO builder to update
+     * @return the regular connection
+     * @throws SQLException if connection creation fails
+     */
+    private Connection createRegularConnection(SessionInfo sessionInfo, String connHash, boolean startSessionIfNone,
+            ConnectionSessionDTO.ConnectionSessionDTOBuilder dtoBuilder) throws SQLException {
+        UnpooledConnectionDetails unpooledDetails = this.unpooledConnectionDetailsMap.get(connHash);
+        Connection conn;
+
+        if (unpooledDetails != null) {
+            // Unpooled mode: create direct connection without pooling
+            conn = createUnpooledRegularConnection(connHash);
+        } else {
+            // Pooled mode: acquire from datasource (HikariCP by default)
+            conn = createPooledRegularConnection(connHash);
+        }
+
+        if (startSessionIfNone) {
+            SessionInfo updatedSession = this.sessionManager.createSession(sessionInfo.getClientUUID(), conn);
+            dtoBuilder.session(updatedSession);
+        }
+
+        return conn;
+    }
+
+    /**
      * Finds a suitable connection for the current sessionInfo.
      * If there is a connection already in the sessionInfo reuse it, if not get a
      * fresh one from the data source.
@@ -675,95 +841,20 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
         if (StringUtils.isNotEmpty(sessionInfo.getSessionUUID())) {
             // Session already exists, reuse its connection
-            conn = this.sessionManager.getConnection(sessionInfo);
-            if (conn == null) {
-                throw new SQLException("Connection not found for this sessionInfo");
-            }
-            dtoBuilder.dbName(DatabaseUtils.resolveDbName(conn.getMetaData().getURL()));
-            if (conn.isClosed()) {
-                throw new SQLException("Connection is closed");
-            }
+            conn = reuseExistingSessionConnection(sessionInfo, dtoBuilder);
         } else {
             // Lazy allocation: check if this is an XA or regular connection
             String connHash = sessionInfo.getConnHash();
             boolean isXA = sessionInfo.getIsXA();
 
             if (isXA) {
-                // XA connection - check if unpooled or pooled mode
-                XADataSource xaDataSource = this.xaDataSourceMap.get(connHash);
-
-                if (xaDataSource != null) {
-                    // Unpooled XA mode: create XAConnection on demand
-                    try {
-                        log.debug("Creating unpooled XAConnection for hash: {}", connHash);
-                        XAConnection xaConnection = xaDataSource.getXAConnection();
-                        conn = xaConnection.getConnection();
-
-                        // Store the XAConnection in session for XA operations
-                        if (startSessionIfNone) {
-                            SessionInfo updatedSession = this.sessionManager.createSession(sessionInfo.getClientUUID(),
-                                    conn);
-                            // Store XAConnection as an attribute for XA operations
-                            this.sessionManager.registerAttr(updatedSession, "xaConnection", xaConnection);
-                            dtoBuilder.session(updatedSession);
-                        }
-                        log.debug("Successfully created unpooled XAConnection for hash: {}", connHash);
-                    } catch (SQLException e) {
-                        log.error("Failed to create unpooled XAConnection for hash: {}. Error: {}",
-                                connHash, e.getMessage());
-                        throw e;
-                    }
-                } else {
-                    // Pooled XA mode - should already have a session created in connect()
-                    // This shouldn't happen as XA sessions are created eagerly
-                    throw new SQLException("XA session should already exist. Session UUID is missing.");
-                }
+                conn = createXaConnection(sessionInfo, connHash, startSessionIfNone, dtoBuilder);
             } else {
-                // Regular connection - check if pooled or unpooled mode
-                UnpooledConnectionDetails unpooledDetails = this.unpooledConnectionDetailsMap.get(connHash);
-
-                if (unpooledDetails != null) {
-                    // Unpooled mode: create direct connection without pooling
-                    try {
-                        log.debug("Creating unpooled (passthrough) connection for hash: {}", connHash);
-                        conn = DriverManager.getConnection(
-                                unpooledDetails.getUrl(),
-                                unpooledDetails.getUsername(),
-                                unpooledDetails.getPassword());
-                        log.debug("Successfully created unpooled connection for hash: {}", connHash);
-                    } catch (SQLException e) {
-                        log.error("Failed to create unpooled connection for hash: {}. Error: {}",
-                                connHash, e.getMessage());
-                        throw e;
-                    }
-                } else {
-                    // Pooled mode: acquire from datasource (HikariCP by default)
-                    DataSource dataSource = this.datasourceMap.get(connHash);
-                    if (dataSource == null) {
-                        throw new SQLException("No datasource found for connection hash: " + connHash);
-                    }
-
-                    try {
-                        // Use enhanced connection acquisition with timeout protection
-                        conn = ConnectionAcquisitionManager.acquireConnection(dataSource, connHash);
-                        log.debug("Successfully acquired connection from pool for hash: {}", connHash);
-                    } catch (SQLException e) {
-                        log.error("Failed to acquire connection from pool for hash: {}. Error: {}",
-                                connHash, e.getMessage());
-
-                        // Re-throw the enhanced exception from ConnectionAcquisitionManager
-                        throw e;
-                    }
-                }
-
-                if (startSessionIfNone) {
-                    SessionInfo updatedSession = this.sessionManager.createSession(sessionInfo.getClientUUID(), conn);
-                    dtoBuilder.session(updatedSession);
-                }
+                conn = createRegularConnection(sessionInfo, connHash, startSessionIfNone, dtoBuilder);
             }
         }
-        dtoBuilder.connection(conn);
 
+        dtoBuilder.connection(conn);
         return dtoBuilder.build();
     }
 
