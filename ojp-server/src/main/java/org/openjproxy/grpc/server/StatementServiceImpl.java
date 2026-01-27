@@ -211,61 +211,81 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 "[XA-REBALANCE] processClusterHealth called: connHash={}, clusterHealth='{}', isXA={}, hasXARegistry={}",
                 connHash, clusterHealth, sessionInfo.getIsXA(), xaRegistries.containsKey(connHash));
 
-        if (!clusterHealth.isEmpty() && !connHash.isEmpty()) {
-
-            // Check if cluster health has changed
-            boolean healthChanged = clusterHealthTracker.hasHealthChanged(connHash, clusterHealth);
-
-            log.debug("[XA-REBALANCE] Cluster health check for {}: changed={}, current health='{}', isXA={}",
-                    connHash, healthChanged, clusterHealth, sessionInfo.getIsXA());
-
-            if (healthChanged) {
-                int healthyServerCount = clusterHealthTracker.countHealthyServers(clusterHealth);
-                log.info(
-                        "[XA-REBALANCE] Cluster health changed for {}, healthy servers: {}, triggering pool rebalancing, isXA={}",
-                        connHash, healthyServerCount, sessionInfo.getIsXA());
-
-                // Update the pool coordinator with new healthy server count
-                ConnectionPoolConfigurer.getPoolCoordinator().updateHealthyServers(connHash, healthyServerCount);
-
-                // Apply pool size changes to non-XA HikariDataSource if present
-                DataSource ds = datasourceMap.get(connHash);
-                if (ds instanceof HikariDataSource hikariDataSource) {
-                    log.info("[XA-REBALANCE-DEBUG] Applying size changes to HikariDataSource for {}", connHash);
-                    ConnectionPoolConfigurer.applyPoolSizeChanges(connHash, hikariDataSource);
-                } else {
-                    log.info("[XA-REBALANCE-DEBUG] No HikariDataSource found for {}", connHash);
-                }
-
-                // Apply pool size changes to XA registry if present
-                XATransactionRegistry xaRegistry = xaRegistries.get(connHash);
-                if (xaRegistry != null) {
-                    log.info("[XA-REBALANCE-DEBUG] Found XA registry for {}, resizing", connHash);
-                    MultinodePoolCoordinator.PoolAllocation allocation = ConnectionPoolConfigurer.getPoolCoordinator()
-                            .getPoolAllocation(connHash);
-
-                    if (allocation != null) {
-                        int newMaxPoolSize = allocation.getCurrentMaxPoolSize();
-                        int newMinIdle = allocation.getCurrentMinIdle();
-
-                        log.info("[XA-REBALANCE-DEBUG] Resizing XA backend pool for {}: maxPoolSize={}, minIdle={}",
-                                connHash, newMaxPoolSize, newMinIdle);
-
-                        xaRegistry.resizeBackendPool(newMaxPoolSize, newMinIdle);
-                    } else {
-                        log.warn("[XA-REBALANCE-DEBUG] No pool allocation found for {}", connHash);
-                    }
-                } else if (sessionInfo.getIsXA()) {
-                    // Only log missing XA registry for actual XA connections
-                    log.info("[XA-REBALANCE-DEBUG] No XA registry found for XA connection {}", connHash);
-                }
-            } else {
-                log.debug("[XA-REBALANCE-DEBUG] Cluster health unchanged for {}", connHash);
-            }
-        } else {
+        if (clusterHealth.isEmpty() || connHash.isEmpty()) {
             log.info("[XA-REBALANCE-DEBUG] Skipping cluster health processing: clusterHealth={}, connHash={}",
                     clusterHealth.isEmpty() ? "empty" : "present",
                     connHash.isEmpty() ? "empty" : "present");
+            return;
+        }
+
+        // Check if cluster health has changed
+        boolean healthChanged = clusterHealthTracker.hasHealthChanged(connHash, clusterHealth);
+
+        log.debug("[XA-REBALANCE] Cluster health check for {}: changed={}, current health='{}', isXA={}",
+                connHash, healthChanged, clusterHealth, sessionInfo.getIsXA());
+
+        if (healthChanged) {
+            handleHealthChange(connHash, clusterHealth, sessionInfo);
+        } else {
+            log.debug("[XA-REBALANCE-DEBUG] Cluster health unchanged for {}", connHash);
+        }
+    }
+
+    /**
+     * Handles cluster health change by updating pool coordinator and applying
+     * pool size changes to both HikariDataSource and XA registry.
+     */
+    private void handleHealthChange(String connHash, String clusterHealth, SessionInfo sessionInfo) {
+        int healthyServerCount = clusterHealthTracker.countHealthyServers(clusterHealth);
+        log.info(
+                "[XA-REBALANCE] Cluster health changed for {}, healthy servers: {}, triggering pool rebalancing, isXA={}",
+                connHash, healthyServerCount, sessionInfo.getIsXA());
+
+        // Update the pool coordinator with new healthy server count
+        ConnectionPoolConfigurer.getPoolCoordinator().updateHealthyServers(connHash, healthyServerCount);
+
+        // Apply pool size changes to both HikariDataSource and XA registry
+        applyHikariPoolSizeChanges(connHash);
+        applyXARegistryPoolSizeChanges(connHash, sessionInfo);
+    }
+
+    /**
+     * Applies pool size changes to HikariDataSource if present.
+     */
+    private void applyHikariPoolSizeChanges(String connHash) {
+        DataSource ds = datasourceMap.get(connHash);
+        if (ds instanceof HikariDataSource hikariDataSource) {
+            log.info("[XA-REBALANCE-DEBUG] Applying size changes to HikariDataSource for {}", connHash);
+            ConnectionPoolConfigurer.applyPoolSizeChanges(connHash, hikariDataSource);
+        } else {
+            log.info("[XA-REBALANCE-DEBUG] No HikariDataSource found for {}", connHash);
+        }
+    }
+
+    /**
+     * Applies pool size changes to XA registry if present.
+     */
+    private void applyXARegistryPoolSizeChanges(String connHash, SessionInfo sessionInfo) {
+        XATransactionRegistry xaRegistry = xaRegistries.get(connHash);
+        if (xaRegistry != null) {
+            log.info("[XA-REBALANCE-DEBUG] Found XA registry for {}, resizing", connHash);
+            MultinodePoolCoordinator.PoolAllocation allocation = ConnectionPoolConfigurer.getPoolCoordinator()
+                    .getPoolAllocation(connHash);
+
+            if (allocation != null) {
+                int newMaxPoolSize = allocation.getCurrentMaxPoolSize();
+                int newMinIdle = allocation.getCurrentMinIdle();
+
+                log.info("[XA-REBALANCE-DEBUG] Resizing XA backend pool for {}: maxPoolSize={}, minIdle={}",
+                        connHash, newMaxPoolSize, newMinIdle);
+
+                xaRegistry.resizeBackendPool(newMaxPoolSize, newMinIdle);
+            } else {
+                log.warn("[XA-REBALANCE-DEBUG] No pool allocation found for {}", connHash);
+            }
+        } else if (sessionInfo.getIsXA()) {
+            // Only log missing XA registry for actual XA connections
+            log.info("[XA-REBALANCE-DEBUG] No XA registry found for XA connection {}", connHash);
         }
     }
 
