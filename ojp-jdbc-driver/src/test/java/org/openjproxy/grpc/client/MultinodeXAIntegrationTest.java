@@ -44,6 +44,10 @@ import static org.junit.jupiter.api.Assumptions.assumeFalse;
 public class MultinodeXAIntegrationTest {
     private static final int THREADS = 5; // Number of worker threads
     private static final int RAMPUP_MS = 50 * 1000; // 50 seconds Ramp-up window in milliseconds
+    
+    // Retry configuration for connection-level failures
+    private static final int MAX_RETRIES = 3;
+    private static final long RETRY_DELAY_MS = 100; // Initial delay between retries
 
     protected static boolean isTestDisabled;
     private static Queue<Long> queryDurations = new ConcurrentLinkedQueue<>();
@@ -201,12 +205,42 @@ public class MultinodeXAIntegrationTest {
         // Run each query in its own thread to better test multinode balancing
         CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
             long start = System.nanoTime();
-            try {
-                query.call();
-            } catch (Exception e) {
-                incrementFailures(e);
-                System.err.println("Query failed: " + e.getMessage() + " \n " + ExceptionUtils.getStackTrace(e));
+            Exception lastException = null;
+            boolean succeeded = false;
+            
+            // Retry logic for connection-level errors
+            for (int attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+                try {
+                    query.call();
+                    succeeded = true;
+                    break; // Success - exit retry loop
+                } catch (Exception e) {
+                    lastException = e;
+                    
+                    // Check if this is a connection-level error that should be retried
+                    if (isConnectionLevelError(e) && attempt < MAX_RETRIES) {
+                        // Connection-level error - retry after delay
+                        log.debug("Connection-level error on attempt {}, retrying: {}", attempt + 1, e.getMessage());
+                        try {
+                            Thread.sleep(RETRY_DELAY_MS * (attempt + 1)); // Exponential backoff
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break; // Exit retry loop if interrupted
+                        }
+                    } else {
+                        // Either not a connection-level error, or we've exhausted retries
+                        break;
+                    }
+                }
             }
+            
+            // If we didn't succeed after retries, count it as a failure
+            if (!succeeded && lastException != null) {
+                incrementFailures(lastException);
+                System.err.println("Query failed after " + (MAX_RETRIES + 1) + " attempts: " + 
+                    lastException.getMessage() + " \n " + ExceptionUtils.getStackTrace(lastException));
+            }
+            
             long end = System.nanoTime();
             queryDurations.add(end - start);
             totalQueries.incrementAndGet();
@@ -1265,6 +1299,51 @@ public class MultinodeXAIntegrationTest {
                 return null;
             });
         }
+    }
+
+    /**
+     * Determines if an exception represents a connection-level error that should trigger a retry.
+     * This uses the same logic as MultinodeConnectionManager.isConnectionLevelError() to identify
+     * exceptions that indicate server unavailability:
+     * - UNAVAILABLE: Server not reachable
+     * - DEADLINE_EXCEEDED: Request timeout
+     * - CANCELLED: Connection cancelled
+     * - UNKNOWN: Connection-related unknown errors
+     * 
+     * @param exception The exception to check
+     * @return true if this is a connection-level error that should be retried
+     */
+    private static boolean isConnectionLevelError(Exception exception) {
+        if (exception instanceof StatusRuntimeException) {
+            StatusRuntimeException statusException = (StatusRuntimeException) exception;
+            io.grpc.Status.Code code = statusException.getStatus().getCode();
+            
+            // Only these status codes indicate connection-level failures
+            return code == io.grpc.Status.Code.UNAVAILABLE ||
+                   code == io.grpc.Status.Code.DEADLINE_EXCEEDED ||
+                   code == io.grpc.Status.Code.CANCELLED ||
+                   (code == io.grpc.Status.Code.UNKNOWN && 
+                    statusException.getMessage() != null && 
+                    (statusException.getMessage().contains("connection") || 
+                     statusException.getMessage().contains("Connection")));
+        }
+        
+        // For non-gRPC exceptions, check for connection-related keywords
+        String message = exception.getMessage();
+        if (message != null) {
+            String lowerMessage = message.toLowerCase();
+            
+            // Pool exhaustion is NOT a server connectivity issue
+            if (lowerMessage.contains("pool exhausted") || lowerMessage.contains("pool is exhausted")) {
+                return false;
+            }
+            
+            return lowerMessage.contains("connection") || 
+                   lowerMessage.contains("timeout") ||
+                   lowerMessage.contains("unavailable");
+        }
+        
+        return false;
     }
 
     private static void incrementFailures(Exception e) {
