@@ -960,6 +960,160 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         return dtoBuilder.build();
     }
 
+    /**
+     * Checks if row-by-row mode is required for the given database and column type.
+     */
+    private boolean requiresRowByRowMode(DbName dbName, int colType) {
+        return (DbName.SQL_SERVER.equals(dbName) || DbName.DB2.equals(dbName))
+                && (colType == Types.VARBINARY || colType == Types.BLOB 
+                    || colType == Types.LONGVARBINARY || colType == Types.CLOB 
+                    || colType == Types.BINARY);
+    }
+
+    /**
+     * Checks if the loop should break early based on database and result set mode.
+     */
+    private boolean shouldBreakEarly(DbName dbName, String resultSetMode) {
+        return (DbName.DB2.equals(dbName) || DbName.SQL_SERVER.equals(dbName))
+                && CommonConstants.RESULT_SET_ROW_BY_ROW_MODE.equalsIgnoreCase(resultSetMode);
+    }
+
+    /**
+     * Checks if a result block should be sent based on row count.
+     */
+    private boolean shouldSendBlock(int row) {
+        return row % CommonConstants.ROWS_PER_RESULT_SET_DATA_BLOCK == 0;
+    }
+
+    /**
+     * Processes a VARBINARY column value.
+     */
+    private Object processVarbinaryColumn(ResultSet rs, int columnIndex, DbName dbName, 
+                                         SessionInfo session, String colTypeName, String[] resultSetMode) throws SQLException {
+        if (requiresRowByRowMode(dbName, Types.VARBINARY)) {
+            resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
+        }
+        if ("BLOB".equalsIgnoreCase(colTypeName)) {
+            return LobProcessor.treatAsBlob(sessionManager, session, rs, columnIndex, dbNameMap);
+        } else {
+            return LobProcessor.treatAsBinary(sessionManager, session, dbName, rs, columnIndex, INPUT_STREAM_TYPES);
+        }
+    }
+
+    /**
+     * Processes a BLOB or LONGVARBINARY column value.
+     */
+    private Object processBlobColumn(ResultSet rs, int columnIndex, DbName dbName, 
+                                     SessionInfo session, int colType, String[] resultSetMode) throws SQLException {
+        if (requiresRowByRowMode(dbName, colType)) {
+            resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
+        }
+        return LobProcessor.treatAsBlob(sessionManager, session, rs, columnIndex, dbNameMap);
+    }
+
+    /**
+     * Processes a CLOB column value.
+     */
+    private Object processClobColumn(ResultSet rs, int columnIndex, DbName dbName, 
+                                    SessionInfo session, String[] resultSetMode) throws SQLException {
+        if (requiresRowByRowMode(dbName, Types.CLOB)) {
+            resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
+        }
+        Clob clob = rs.getClob(columnIndex + 1);
+        if (clob != null) {
+            String clobUUID = UUID.randomUUID().toString();
+            // CLOB needs to be prefixed as per it can be read in the JDBC driver by
+            // getString method and it would be valid to return just a UUID as string
+            this.sessionManager.registerLob(session, clob, clobUUID);
+            return CommonConstants.OJP_CLOB_PREFIX + clobUUID;
+        }
+        return null;
+    }
+
+    /**
+     * Processes a BINARY column value.
+     */
+    private Object processBinaryColumn(ResultSet rs, int columnIndex, DbName dbName, 
+                                      SessionInfo session, String[] resultSetMode) throws SQLException {
+        if (requiresRowByRowMode(dbName, Types.BINARY)) {
+            resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
+        }
+        return LobProcessor.treatAsBinary(sessionManager, session, dbName, rs, columnIndex, INPUT_STREAM_TYPES);
+    }
+
+    /**
+     * Processes a DATE column value.
+     */
+    private Object processDateColumn(ResultSet rs, int columnIndex, String colTypeName) throws SQLException {
+        Date date = rs.getDate(columnIndex + 1);
+        if ("YEAR".equalsIgnoreCase(colTypeName)) {
+            return date.toLocalDate().getYear();
+        }
+        return date;
+    }
+
+    /**
+     * Processes a default column value (handles special cases like DateTimeOffset).
+     */
+    private Object processDefaultColumn(ResultSet rs, int columnIndex, String colTypeName, int colType) throws SQLException {
+        Object currentValue = rs.getObject(columnIndex + 1);
+        // com.microsoft.sqlserver.jdbc.DateTimeOffset special case as per it does not
+        // implement any standar java.sql interface.
+        if ("datetimeoffset".equalsIgnoreCase(colTypeName) && colType == -155) {
+            return DateTimeUtils.extractOffsetDateTime(currentValue);
+        }
+        return currentValue;
+    }
+
+    /**
+     * Processes a single column value based on its SQL type.
+     * Updates resultSetMode array if row-by-row mode is needed.
+     */
+    private Object processColumnValue(ResultSet rs, int columnIndex, DbName dbName, 
+                                     SessionInfo session, String[] resultSetMode) throws SQLException {
+        int colType = rs.getMetaData().getColumnType(columnIndex + 1);
+        String colTypeName = rs.getMetaData().getColumnTypeName(columnIndex + 1);
+        
+        // Postgres uses type BYTEA which translates to type VARBINARY
+        return switch (colType) {
+            case Types.VARBINARY -> processVarbinaryColumn(rs, columnIndex, dbName, session, colTypeName, resultSetMode);
+            case Types.BLOB, Types.LONGVARBINARY -> processBlobColumn(rs, columnIndex, dbName, session, colType, resultSetMode);
+            case Types.CLOB -> processClobColumn(rs, columnIndex, dbName, session, resultSetMode);
+            case Types.BINARY -> processBinaryColumn(rs, columnIndex, dbName, session, resultSetMode);
+            case Types.DATE -> processDateColumn(rs, columnIndex, colTypeName);
+            case Types.TIMESTAMP -> rs.getTimestamp(columnIndex + 1);
+            default -> processDefaultColumn(rs, columnIndex, colTypeName, colType);
+        };
+    }
+
+    /**
+     * Processes all columns in a single row from the result set.
+     * Updates resultSetMode array if row-by-row mode is needed.
+     */
+    private Object[] processRow(ResultSet rs, int columnCount, DbName dbName, 
+                                SessionInfo session, String[] resultSetMode) throws SQLException {
+        Object[] rowValues = new Object[columnCount];
+        for (int i = 0; i < columnCount; i++) {
+            rowValues[i] = processColumnValue(rs, i, dbName, session, resultSetMode);
+        }
+        return rowValues;
+    }
+
+    /**
+     * Sends a result block to the response observer and returns a new builder for the next block.
+     */
+    private OpQueryResult.OpQueryResultBuilder sendResultBlock(SessionInfo session, 
+                                                               List<Object[]> results,
+                                                               OpQueryResult.OpQueryResultBuilder queryResultBuilder,
+                                                               String resultSetUUID, 
+                                                               String resultSetMode,
+                                                               StreamObserver<OpResult> responseObserver) {
+        responseObserver.onNext(ResultSetWrapper.wrapResults(session, results, queryResultBuilder,
+                resultSetUUID, resultSetMode));
+        // Recreate the builder to not send labels in every block.
+        return OpQueryResult.builder();
+    }
+
     private void handleResultSet(SessionInfo session, String resultSetUUID, StreamObserver<OpResult> responseObserver)
             throws SQLException {
         ResultSet rs = this.sessionManager.getResultSet(session, resultSetUUID);
@@ -978,102 +1132,28 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         // Only used if result set contains LOBs in SQL Server and DB2 (if LOB's
         // present), so cursor is not read in advance,
         // every row has to be requested by the jdbc client.
-        String resultSetMode = "";
+        String[] resultSetMode = {""};
         boolean resultSetMetadataCollected = false;
 
         while (rs.next()) {
             if (DbName.DB2.equals(dbName) && !resultSetMetadataCollected) {
                 this.collectResultSetMetadata(session, resultSetUUID, rs);
+                resultSetMetadataCollected = true;
             }
             justSent = false;
             row++;
-            Object[] rowValues = new Object[columnCount];
-            for (int i = 0; i < columnCount; i++) {
-                int colType = rs.getMetaData().getColumnType(i + 1);
-                String colTypeName = rs.getMetaData().getColumnTypeName(i + 1);
-                Object currentValue = null;
-                // Postgres uses type BYTEA which translates to type VARBINARY
-                switch (colType) {
-                    case Types.VARBINARY: {
-                        if (DbName.SQL_SERVER.equals(dbName) || DbName.DB2.equals(dbName)) {
-                            resultSetMode = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
-                        }
-                        if ("BLOB".equalsIgnoreCase(colTypeName)) {
-                            currentValue = LobProcessor.treatAsBlob(sessionManager, session, rs, i, dbNameMap);
-                        } else {
-                            currentValue = LobProcessor.treatAsBinary(sessionManager, session, dbName, rs, i,
-                                    INPUT_STREAM_TYPES);
-                        }
-                        break;
-                    }
-                    case Types.BLOB, Types.LONGVARBINARY: {
-                        if (DbName.SQL_SERVER.equals(dbName) || DbName.DB2.equals(dbName)) {
-                            resultSetMode = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
-                        }
-                        currentValue = LobProcessor.treatAsBlob(sessionManager, session, rs, i, dbNameMap);
-                        break;
-                    }
-                    case Types.CLOB: {
-                        if (DbName.SQL_SERVER.equals(dbName) || DbName.DB2.equals(dbName)) {
-                            resultSetMode = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
-                        }
-                        Clob clob = rs.getClob(i + 1);
-                        if (clob != null) {
-                            String clobUUID = UUID.randomUUID().toString();
-                            // CLOB needs to be prefixed as per it can be read in the JDBC driver by
-                            // getString method and it would be valid to return just a UUID as string
-                            currentValue = CommonConstants.OJP_CLOB_PREFIX + clobUUID;
-                            this.sessionManager.registerLob(session, clob, clobUUID);
-                        }
-                        break;
-                    }
-                    case Types.BINARY: {
-                        if (DbName.SQL_SERVER.equals(dbName) || DbName.DB2.equals(dbName)) {
-                            resultSetMode = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
-                        }
-                        currentValue = LobProcessor.treatAsBinary(sessionManager, session, dbName, rs, i,
-                                INPUT_STREAM_TYPES);
-                        break;
-                    }
-                    case Types.DATE: {
-                        Date date = rs.getDate(i + 1);
-                        if ("YEAR".equalsIgnoreCase(colTypeName)) {
-                            currentValue = date.toLocalDate().getYear();
-                        } else {
-                            currentValue = date;
-                        }
-                        break;
-                    }
-                    case Types.TIMESTAMP: {
-                        currentValue = rs.getTimestamp(i + 1);
-                        break;
-                    }
-                    default: {
-                        currentValue = rs.getObject(i + 1);
-                        // com.microsoft.sqlserver.jdbc.DateTimeOffset special case as per it does not
-                        // implement any standar java.sql interface.
-                        if ("datetimeoffset".equalsIgnoreCase(colTypeName) && colType == -155) {
-                            currentValue = DateTimeUtils.extractOffsetDateTime(currentValue);
-                        }
-                        break;
-                    }
-                }
-                rowValues[i] = currentValue;
-
-            }
+            
+            Object[] rowValues = processRow(rs, columnCount, dbName, session, resultSetMode);
             results.add(rowValues);
 
-            if ((DbName.DB2.equals(dbName) || DbName.SQL_SERVER.equals(dbName))
-                    && CommonConstants.RESULT_SET_ROW_BY_ROW_MODE.equalsIgnoreCase(resultSetMode)) {
+            if (shouldBreakEarly(dbName, resultSetMode[0])) {
                 break;
             }
 
-            if (row % CommonConstants.ROWS_PER_RESULT_SET_DATA_BLOCK == 0) {
+            if (shouldSendBlock(row)) {
                 justSent = true;
-                // Send a block of records
-                responseObserver.onNext(ResultSetWrapper.wrapResults(session, results, queryResultBuilder,
-                        resultSetUUID, resultSetMode));
-                queryResultBuilder = OpQueryResult.builder();// Recreate the builder to not send labels in every block.
+                queryResultBuilder = sendResultBlock(session, results, queryResultBuilder,
+                        resultSetUUID, resultSetMode[0], responseObserver);
                 results = new ArrayList<>();
             }
         }
@@ -1081,11 +1161,10 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         if (!justSent) {
             // Send a block of remaining records
             responseObserver.onNext(
-                    ResultSetWrapper.wrapResults(session, results, queryResultBuilder, resultSetUUID, resultSetMode));
+                    ResultSetWrapper.wrapResults(session, results, queryResultBuilder, resultSetUUID, resultSetMode[0]));
         }
 
         responseObserver.onCompleted();
-
     }
 
     @SneakyThrows
