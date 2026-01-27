@@ -151,17 +151,6 @@ public class MultinodeConnectionManager {
     }
     
     private ChannelAndStub createChannelAndStub(ServerEndpoint endpoint) {
-        // Clean up any existing channel for this endpoint first
-        ChannelAndStub existingChannelAndStub = channelMap.get(endpoint);
-        if (existingChannelAndStub != null) {
-            log.debug("Shutting down existing channel for {} before creating new one", endpoint.getAddress());
-            try {
-                existingChannelAndStub.channel.shutdown();
-            } catch (Exception e) {
-                log.warn("Error shutting down existing channel for {}: {}", endpoint.getAddress(), e.getMessage());
-            }
-        }
-        
         String target = DNS_PREFIX + endpoint.getHost() + ":" + endpoint.getPort();
         ManagedChannel channel = GrpcChannelFactory.createChannel(target);
         
@@ -170,10 +159,21 @@ public class MultinodeConnectionManager {
         StatementServiceGrpc.StatementServiceStub asyncStub = 
                 StatementServiceGrpc.newStub(channel);
         
-        ChannelAndStub channelAndStub = new ChannelAndStub(channel, blockingStub, asyncStub);
-        channelMap.put(endpoint, channelAndStub);
+        ChannelAndStub newChannelAndStub = new ChannelAndStub(channel, blockingStub, asyncStub);
         
-        return channelAndStub;
+        // Atomically replace old channel with new one and shutdown the old one if it exists
+        // This prevents race conditions by doing check-and-replace atomically
+        ChannelAndStub oldChannelAndStub = channelMap.put(endpoint, newChannelAndStub);
+        if (oldChannelAndStub != null) {
+            log.debug("Shutting down replaced channel for {}", endpoint.getAddress());
+            try {
+                oldChannelAndStub.channel.shutdown();
+            } catch (Exception e) {
+                log.warn("Error shutting down replaced channel for {}: {}", endpoint.getAddress(), e.getMessage());
+            }
+        }
+        
+        return newChannelAndStub;
     }
     
     /**
