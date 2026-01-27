@@ -43,6 +43,7 @@ public class GrpcExceptionHandler {
      * 
      * Database-level errors (e.g., table not found, syntax errors) do not indicate server unavailability.
      * Pool exhaustion errors do NOT indicate server unavailability - they indicate resource limits, not connectivity issues.
+     * Session invalidation errors do NOT indicate server unavailability - they indicate the session was lost/expired.
      * 
      * @param exception The exception to check
      * @return true if this is a connection-level error indicating server unavailability
@@ -70,6 +71,16 @@ public class GrpcExceptionHandler {
             // CRITICAL: Pool exhaustion is NOT a server connectivity issue
             // Don't mark server unhealthy when pool is exhausted - it's a resource limit, not a connection failure
             if (lowerMessage.contains("pool exhausted") || lowerMessage.contains("pool is exhausted")) {
+                return false;
+            }
+            
+            // CRITICAL: Session invalidation/loss is NOT a connection-level error
+            // Sessions are explicitly invalidated when servers fail. The session is permanently lost.
+            // Retrying with the same session will always fail. This needs proper XA transaction handling, not retry.
+            if (lowerMessage.contains("session") && 
+                (lowerMessage.contains("has no associated server") || 
+                 lowerMessage.contains("binding was lost") ||
+                 lowerMessage.contains("may have expired"))) {
                 return false;
             }
             
