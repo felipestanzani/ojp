@@ -154,7 +154,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      * @param sessionInfo the session information
      */
     private void updateSessionActivity(SessionInfo sessionInfo) {
-        if (sessionInfo != null && sessionInfo.getSessionUUID() != null && !sessionInfo.getSessionUUID().isEmpty()) {
+        if (sessionInfo != null && !sessionInfo.getSessionUUID().isEmpty()) {
             sessionManager.updateSessionActivity(sessionInfo);
         }
     }
@@ -209,9 +209,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     private String getTargetServer(SessionInfo incomingSessionInfo) {
         // Echo back the targetServer from incoming request, or return empty string if
         // not present
-        if (incomingSessionInfo != null &&
-                incomingSessionInfo.getTargetServer() != null &&
-                !incomingSessionInfo.getTargetServer().isEmpty()) {
+        if (incomingSessionInfo != null && !incomingSessionInfo.getTargetServer().isEmpty()) {
             return incomingSessionInfo.getTargetServer();
         }
 
@@ -238,8 +236,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                 "[XA-REBALANCE] processClusterHealth called: connHash={}, clusterHealth='{}', isXA={}, hasXARegistry={}",
                 connHash, clusterHealth, sessionInfo.getIsXA(), xaRegistries.containsKey(connHash));
 
-        if (clusterHealth != null && !clusterHealth.isEmpty() &&
-                connHash != null && !connHash.isEmpty()) {
+        if (!clusterHealth.isEmpty() && !connHash.isEmpty()) {
 
             // Check if cluster health has changed
             boolean healthChanged = clusterHealthTracker.hasHealthChanged(connHash, clusterHealth);
@@ -292,8 +289,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             }
         } else {
             log.info("[XA-REBALANCE-DEBUG] Skipping cluster health processing: clusterHealth={}, connHash={}",
-                    clusterHealth != null && !clusterHealth.isEmpty() ? "present" : "empty",
-                    connHash != null && !connHash.isEmpty() ? "present" : "empty");
+                    clusterHealth.isEmpty() ? "empty" : "present",
+                    connHash.isEmpty() ? "empty" : "present");
         }
     }
 
@@ -518,7 +515,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         // ensures session affinity is properly enforced even for queries that don't return results
         boolean requiresSessionAffinity = SqlSessionAffinityDetector.requiresSessionAffinity(request.getSql());
         
-        ConnectionSessionDTO dto = this.sessionConnection(request.getSession(), true || requiresSessionAffinity);
+        ConnectionSessionDTO dto = this.sessionConnection(request.getSession(), true);
 
         // Phase 2: SQL Enhancement with timing
         String sql = request.getSql();
