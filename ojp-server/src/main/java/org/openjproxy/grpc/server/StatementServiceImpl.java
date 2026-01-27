@@ -1,24 +1,6 @@
 package org.openjproxy.grpc.server;
 
-import com.openjproxy.grpc.CallResourceRequest;
-import com.openjproxy.grpc.CallResourceResponse;
-import com.openjproxy.grpc.CallType;
-import com.openjproxy.grpc.ConnectionDetails;
-import com.openjproxy.grpc.DbName;
-import com.openjproxy.grpc.LobDataBlock;
-import com.openjproxy.grpc.LobReference;
-import com.openjproxy.grpc.OpResult;
-import com.openjproxy.grpc.ReadLobRequest;
-import com.openjproxy.grpc.ResourceType;
-import com.openjproxy.grpc.ResultSetFetchRequest;
-import com.openjproxy.grpc.ResultType;
-import com.openjproxy.grpc.SessionInfo;
-import com.openjproxy.grpc.SessionTerminationStatus;
-import com.openjproxy.grpc.SqlErrorType;
-import com.openjproxy.grpc.StatementRequest;
-import com.openjproxy.grpc.StatementServiceGrpc;
-import com.openjproxy.grpc.TransactionInfo;
-import com.openjproxy.grpc.TransactionStatus;
+import com.openjproxy.grpc.*;
 import com.zaxxer.hikari.HikariDataSource;
 import io.grpc.stub.StreamObserver;
 import lombok.Builder;
@@ -32,36 +14,31 @@ import org.openjproxy.database.DatabaseUtils;
 import org.openjproxy.grpc.ProtoConverter;
 import org.openjproxy.grpc.dto.OpQueryResult;
 import org.openjproxy.grpc.dto.Parameter;
+import org.openjproxy.grpc.server.action.ActionContext;
+import org.openjproxy.grpc.server.action.connection.ConnectAction;
+import org.openjproxy.grpc.server.action.streaming.CreateLobAction;
+import org.openjproxy.grpc.server.action.streaming.ReadLobAction;
+import org.openjproxy.grpc.server.action.transaction.*;
 import org.openjproxy.grpc.server.lob.LobProcessor;
 import org.openjproxy.grpc.server.pool.ConnectionPoolConfigurer;
 import org.openjproxy.grpc.server.resultset.ResultSetWrapper;
+import org.openjproxy.grpc.server.sql.SqlEnhancementResult;
+import org.openjproxy.grpc.server.sql.SqlEnhancerEngine;
 import org.openjproxy.grpc.server.statement.ParameterHandler;
 import org.openjproxy.grpc.server.statement.StatementFactory;
 import org.openjproxy.grpc.server.utils.DateTimeUtils;
-import org.openjproxy.grpc.server.utils.MethodNameGenerator;
-import org.openjproxy.grpc.server.utils.MethodReflectionUtils;
 import org.openjproxy.grpc.server.utils.SessionInfoUtils;
 import org.openjproxy.grpc.server.utils.StatementRequestValidator;
 import org.openjproxy.grpc.server.sql.SqlSessionAffinityDetector;
 import org.openjproxy.grpc.server.action.xa.XaStartAction;
 import org.openjproxy.xa.pool.XATransactionRegistry;
 import org.openjproxy.xa.pool.spi.XAConnectionPoolProvider;
-import org.openjproxy.grpc.server.action.transaction.RollbackTransactionAction;
+
 import javax.sql.DataSource;
 import javax.sql.XAConnection;
 import javax.sql.XADataSource;
 import java.io.InputStream;
-import java.lang.reflect.Method;
-import java.sql.Clob;
-import java.sql.Connection;
-import java.sql.Date;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.ResultSetMetaData;
-import java.sql.SQLDataException;
-import java.sql.SQLException;
-import java.sql.Statement;
-import java.sql.Types;
+import java.sql.*;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -72,11 +49,9 @@ import java.util.ServiceLoader;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.openjproxy.grpc.server.Constants.EMPTY_LIST;
 import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMetadata;
 
 import org.openjproxy.grpc.server.action.xa.XaEndAction;
-import org.openjproxy.grpc.server.action.transaction.CommitTransactionAction;
 import org.openjproxy.grpc.server.action.session.TerminateSessionAction;
 import org.openjproxy.grpc.server.action.resource.CallResourceAction;
 import org.openjproxy.grpc.server.action.xa.XaPrepareAction;
@@ -102,7 +77,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     private final Map<String, SlowQuerySegregationManager> slowQuerySegregationManagers = new ConcurrentHashMap<>();
 
     // SQL Enhancer Engine for query optimization
-    private final org.openjproxy.grpc.server.sql.SqlEnhancerEngine sqlEnhancerEngine;
+    private final SqlEnhancerEngine sqlEnhancerEngine;
 
     // Multinode XA coordinator for distributing transaction limits
     private static final MultinodeXaCoordinator xaCoordinator = new MultinodeXaCoordinator();
@@ -120,19 +95,19 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     private static final String RESULT_SET_METADATA_ATTR_PREFIX = "rsMetadata|";
 
     // ActionContext for refactored actions
-    private final org.openjproxy.grpc.server.action.ActionContext actionContext;
+    private final ActionContext actionContext;
 
     public StatementServiceImpl(SessionManager sessionManager, CircuitBreaker circuitBreaker,
             ServerConfiguration serverConfiguration) {
         this.sessionManager = sessionManager;
         this.circuitBreaker = circuitBreaker;
         // Server configuration for creating segregation managers
-        this.sqlEnhancerEngine = new org.openjproxy.grpc.server.sql.SqlEnhancerEngine(
+        this.sqlEnhancerEngine = new SqlEnhancerEngine(
                 serverConfiguration.isSqlEnhancerEnabled());
         initializeXAPoolProvider();
 
         // Initialize ActionContext with all shared state
-        this.actionContext = new org.openjproxy.grpc.server.action.ActionContext(
+        this.actionContext = new ActionContext(
                 datasourceMap,
                 xaDataSourceMap,
                 xaRegistries,
@@ -255,9 +230,9 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
                 // Apply pool size changes to non-XA HikariDataSource if present
                 DataSource ds = datasourceMap.get(connHash);
-                if (ds instanceof HikariDataSource) {
+                if (ds instanceof HikariDataSource hikariDataSource) {
                     log.info("[XA-REBALANCE-DEBUG] Applying size changes to HikariDataSource for {}", connHash);
-                    ConnectionPoolConfigurer.applyPoolSizeChanges(connHash, (HikariDataSource) ds);
+                    ConnectionPoolConfigurer.applyPoolSizeChanges(connHash, hikariDataSource);
                 } else {
                     log.info("[XA-REBALANCE-DEBUG] No HikariDataSource found for {}", connHash);
                 }
@@ -296,7 +271,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
     @Override
     public void connect(ConnectionDetails connectionDetails, StreamObserver<SessionInfo> responseObserver) {
-        org.openjproxy.grpc.server.action.connection.ConnectAction.getInstance()
+        ConnectAction.getInstance()
                 .execute(actionContext, connectionDetails, responseObserver);
     }
 
@@ -369,7 +344,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      */
     private OpResult executeUpdateInternal(StatementRequest request) throws SQLException {
         int updated = 0;
-        SessionInfo returnSessionInfo = request.getSession();
+        SessionInfo returnSessionInfo;
         ConnectionSessionDTO dto = ConnectionSessionDTO.builder().build();
 
         Statement stmt = null;
@@ -395,11 +370,14 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                     Collection<Object> lobs = sessionManager.getLobs(dto.getSession());
                     for (Object o : lobs) {
                         LobDataBlocksInputStream lobIS = (LobDataBlocksInputStream) o;
+                        @SuppressWarnings("unchecked")
                         Map<String, Object> metadata = (Map<String, Object>) sessionManager.getAttr(dto.getSession(),
                                 lobIS.getUuid());
                         Integer parameterIndex = (Integer) metadata
-                                .get(CommonConstants.PREPARED_STATEMENT_BINARY_STREAM_INDEX);
-                        ps.setBinaryStream(parameterIndex, lobIS);
+                                .get(String.valueOf(CommonConstants.PREPARED_STATEMENT_BINARY_STREAM_INDEX));
+                        if (ps != null) {
+                            ps.setBinaryStream(parameterIndex, lobIS);
+                        }
                     }
                     if (DbName.POSTGRES.equals(dto.getDbName())) {// Postgres requires check if the lob streams are
                                                                   // fully consumed.
@@ -417,14 +395,16 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                     }
                 }
                 if (StatementRequestValidator.isAddBatchOperation(request)) {
-                    ps.addBatch();
+                    if (ps != null) {
+                        ps.addBatch();
+                    }
                     if (request.getStatementUUID().isBlank()) {
                         psUUID = sessionManager.registerPreparedStatement(dto.getSession(), ps);
                     } else {
                         psUUID = request.getStatementUUID();
                     }
                 } else {
-                    updated = ps.executeUpdate();
+                    updated = ps != null ? ps.executeUpdate() : 0;
                 }
                 stmt = ps;
             } else {
@@ -445,20 +425,19 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             }
         } finally {
             // If there is no session, close statement and connection
-            if (dto.getSession() == null || StringUtils.isEmpty(dto.getSession().getSessionUUID())) {
-                if (stmt != null) {
+            if ((dto.getSession() == null || StringUtils.isEmpty(dto.getSession().getSessionUUID())) && stmt != null) {
                     try {
                         stmt.close();
                     } catch (SQLException e) {
-                        log.error("Failure closing statement: " + e.getMessage(), e);
+                        log.error("Failure closing statement: {}", e.getMessage(), e);
                     }
                     try {
                         stmt.getConnection().close();
                     } catch (SQLException e) {
-                        log.error("Failure closing connection: " + e.getMessage(), e);
+                        log.error("Failure closing connection: {}", e.getMessage(), e);
                     }
                 }
-            }
+
         }
     }
 
@@ -490,7 +469,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             circuitBreaker.onSuccess(stmtHash);
         } catch (SQLException e) {
             circuitBreaker.onFailure(stmtHash, e);
-            log.error("Failure during query execution: " + e.getMessage(), e);
+            log.error("Failure during query execution: {}", e.getMessage(), e);
             sendSQLExceptionMetadata(e, responseObserver);
         } catch (Exception e) {
             log.error("Unexpected failure during query execution: " + e.getMessage(), e);
@@ -510,11 +489,6 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      */
     private void executeQueryInternal(StatementRequest request, StreamObserver<OpResult> responseObserver)
             throws SQLException {
-        // Check if SQL requires session affinity (temporary tables, session variables, etc.)
-        // Note: All queries already create sessions (for result set handling), but this
-        // ensures session affinity is properly enforced even for queries that don't return results
-        boolean requiresSessionAffinity = SqlSessionAffinityDetector.requiresSessionAffinity(request.getSql());
-        
         ConnectionSessionDTO dto = this.sessionConnection(request.getSession(), true);
 
         // Phase 2: SQL Enhancement with timing
@@ -522,7 +496,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         long enhancementStartTime = System.currentTimeMillis();
 
         if (sqlEnhancerEngine.isEnabled()) {
-            org.openjproxy.grpc.server.sql.SqlEnhancementResult result = sqlEnhancerEngine.enhance(sql);
+            SqlEnhancementResult result = sqlEnhancerEngine.enhance(sql);
             sql = result.getEnhancedSql();
 
             long enhancementDuration = System.currentTimeMillis() - enhancementStartTime;
@@ -537,13 +511,17 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         }
 
         List<Parameter> params = ProtoConverter.fromProtoList(request.getParametersList());
+        String resultSetUUID;
+
         if (CollectionUtils.isNotEmpty(params)) {
-            PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, sql, params, request);
-            String resultSetUUID = this.sessionManager.registerResultSet(dto.getSession(), ps.executeQuery());
-            this.handleResultSet(dto.getSession(), resultSetUUID, responseObserver);
+
+            try (PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, sql, params, request)) {
+                resultSetUUID = this.sessionManager.registerResultSet(dto.getSession(), ps.executeQuery());
+                this.handleResultSet(dto.getSession(), resultSetUUID, responseObserver);
+            }
         } else {
             Statement stmt = StatementFactory.createStatement(sessionManager, dto.getConnection(), request);
-            String resultSetUUID = this.sessionManager.registerResultSet(dto.getSession(),
+            resultSetUUID = this.sessionManager.registerResultSet(dto.getSession(),
                     stmt.executeQuery(sql));
             this.handleResultSet(dto.getSession(), resultSetUUID, responseObserver);
         }
@@ -570,13 +548,13 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
     @Override
     public StreamObserver<LobDataBlock> createLob(StreamObserver<LobReference> responseObserver) {
-        return org.openjproxy.grpc.server.action.streaming.CreateLobAction.getInstance()
+        return CreateLobAction.getInstance()
                 .execute(actionContext, responseObserver);
     }
 
     @Override
     public void readLob(ReadLobRequest request, StreamObserver<LobDataBlock> responseObserver) {
-        org.openjproxy.grpc.server.action.streaming.ReadLobAction.getInstance()
+        ReadLobAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 
@@ -585,8 +563,10 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         @Getter
         private InputStream inputStream;
         @Getter
+        @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
         private Optional<Long> lobLength;
         @Getter
+        @SuppressWarnings("OptionalUsedAsFieldOrParameterType")
         private Optional<Integer> availableLength;
     }
 
@@ -651,42 +631,6 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     @Override
     public void callResource(CallResourceRequest request, StreamObserver<CallResourceResponse> responseObserver) {
         CallResourceAction.getInstance().execute(actionContext, request, responseObserver);
-    }
-
-    /**
-     * As DB2 eagerly closes result sets in multiple situations the result set
-     * metadata is saved a priori in a session
-     * attribute and has to be read in a special manner treated in this method.
-     *
-     * @param request
-     * @param responseObserver
-     * @return boolean
-     * @throws SQLException
-     */
-    @SneakyThrows
-    private boolean db2SpecialResultSetMetadata(CallResourceRequest request,
-            StreamObserver<CallResourceResponse> responseObserver) throws SQLException {
-        if (DbName.DB2.equals(this.dbNameMap.get(request.getSession().getConnHash())) &&
-                ResourceType.RES_RESULT_SET.equals(request.getResourceType()) &&
-                CallType.CALL_GET.equals(request.getTarget().getCallType()) &&
-                "Metadata".equalsIgnoreCase(request.getTarget().getResourceName())) {
-            ResultSetMetaData resultSetMetaData = (ResultSetMetaData) this.sessionManager.getAttr(request.getSession(),
-                    RESULT_SET_METADATA_ATTR_PREFIX + request.getResourceUUID());
-            List<Object> paramsReceived = (request.getTarget().getNextCall().getParamsCount() > 0)
-                    ? ProtoConverter.parameterValuesToObjectList(request.getTarget().getNextCall().getParamsList())
-                    : EMPTY_LIST;
-            Method methodNext = MethodReflectionUtils.findMethodByName(ResultSetMetaData.class,
-                    MethodNameGenerator.methodName(request.getTarget().getNextCall()),
-                    paramsReceived);
-            Object metadataResult = methodNext.invoke(resultSetMetaData, paramsReceived.toArray());
-            responseObserver.onNext(CallResourceResponse.newBuilder()
-                    .setSession(request.getSession())
-                    .addValues(ProtoConverter.toParameterValue(metadataResult))
-                    .build());
-            responseObserver.onCompleted();
-            return true;
-        }
-        return false;
     }
 
     /**
@@ -762,7 +706,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
                     // Unpooled mode: create direct connection without pooling
                     try {
                         log.debug("Creating unpooled (passthrough) connection for hash: {}", connHash);
-                        conn = java.sql.DriverManager.getConnection(
+                        conn = DriverManager.getConnection(
                                 unpooledDetails.getUrl(),
                                 unpooledDetails.getUsername(),
                                 unpooledDetails.getPassword());
@@ -824,7 +768,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         String resultSetMode = "";
         boolean resultSetMetadataCollected = false;
 
-        forEachRow: while (rs.next()) {
+        while (rs.next()) {
             if (DbName.DB2.equals(dbName) && !resultSetMetadataCollected) {
                 this.collectResultSetMetadata(session, resultSetUUID, rs);
             }
@@ -908,7 +852,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
             if ((DbName.DB2.equals(dbName) || DbName.SQL_SERVER.equals(dbName))
                     && CommonConstants.RESULT_SET_ROW_BY_ROW_MODE.equalsIgnoreCase(resultSetMode)) {
-                break forEachRow;
+                break;
             }
 
             if (row % CommonConstants.ROWS_PER_RESULT_SET_DATA_BLOCK == 0) {
@@ -940,68 +884,68 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     // ===== XA Transaction Operations =====
 
     @Override
-    public void xaStart(com.openjproxy.grpc.XaStartRequest request,
-            StreamObserver<com.openjproxy.grpc.XaResponse> responseObserver) {
+    public void xaStart(XaStartRequest request,
+                        StreamObserver<XaResponse> responseObserver) {
         XaStartAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaEnd(com.openjproxy.grpc.XaEndRequest request,
-            StreamObserver<com.openjproxy.grpc.XaResponse> responseObserver) {
+    public void xaEnd(XaEndRequest request,
+                      StreamObserver<XaResponse> responseObserver) {
         XaEndAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaPrepare(com.openjproxy.grpc.XaPrepareRequest request,
-            StreamObserver<com.openjproxy.grpc.XaPrepareResponse> responseObserver) {
+    public void xaPrepare(XaPrepareRequest request,
+                          StreamObserver<XaPrepareResponse> responseObserver) {
         XaPrepareAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaCommit(com.openjproxy.grpc.XaCommitRequest request,
-            StreamObserver<com.openjproxy.grpc.XaResponse> responseObserver) {
+    public void xaCommit(XaCommitRequest request,
+                         StreamObserver<XaResponse> responseObserver) {
         XaCommitAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaRollback(com.openjproxy.grpc.XaRollbackRequest request,
-            StreamObserver<com.openjproxy.grpc.XaResponse> responseObserver) {
+    public void xaRollback(XaRollbackRequest request,
+                           StreamObserver<XaResponse> responseObserver) {
         XaRollbackAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaRecover(com.openjproxy.grpc.XaRecoverRequest request,
-            StreamObserver<com.openjproxy.grpc.XaRecoverResponse> responseObserver) {
+    public void xaRecover(XaRecoverRequest request,
+                          StreamObserver<XaRecoverResponse> responseObserver) {
         XaRecoverAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaForget(com.openjproxy.grpc.XaForgetRequest request,
-            StreamObserver<com.openjproxy.grpc.XaResponse> responseObserver) {
-        org.openjproxy.grpc.server.action.transaction.XaForgetAction.getInstance()
+    public void xaForget(XaForgetRequest request,
+                         StreamObserver<XaResponse> responseObserver) {
+        XaForgetAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaSetTransactionTimeout(com.openjproxy.grpc.XaSetTransactionTimeoutRequest request,
-            StreamObserver<com.openjproxy.grpc.XaSetTransactionTimeoutResponse> responseObserver) {
-        org.openjproxy.grpc.server.action.transaction.XaSetTransactionTimeoutAction.getInstance()
+    public void xaSetTransactionTimeout(XaSetTransactionTimeoutRequest request,
+                                        StreamObserver<XaSetTransactionTimeoutResponse> responseObserver) {
+        XaSetTransactionTimeoutAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 
     @Override
-    public void xaGetTransactionTimeout(com.openjproxy.grpc.XaGetTransactionTimeoutRequest request,
-            StreamObserver<com.openjproxy.grpc.XaGetTransactionTimeoutResponse> responseObserver) {
-        org.openjproxy.grpc.server.action.transaction.XaGetTransactionTimeoutAction.getInstance()
+    public void xaGetTransactionTimeout(XaGetTransactionTimeoutRequest request,
+                                        StreamObserver<XaGetTransactionTimeoutResponse> responseObserver) {
+        XaGetTransactionTimeoutAction.getInstance()
                 .execute(actionContext, request, responseObserver);
 
     }
 
     @Override
-    public void xaIsSameRM(com.openjproxy.grpc.XaIsSameRMRequest request,
-            StreamObserver<com.openjproxy.grpc.XaIsSameRMResponse> responseObserver) {
-        org.openjproxy.grpc.server.action.transaction.XaIsSameRMAction.getInstance()
+    public void xaIsSameRM(XaIsSameRMRequest request,
+                           StreamObserver<XaIsSameRMResponse> responseObserver) {
+        XaIsSameRMAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 }
