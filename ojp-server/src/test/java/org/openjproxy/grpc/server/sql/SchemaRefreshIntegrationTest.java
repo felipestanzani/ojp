@@ -63,7 +63,7 @@ class SchemaRefreshIntegrationTest {
         assertFalse(schemaCache.needsRefresh(1000), "Should not need refresh immediately after load");
         
         // Wait for refresh interval
-        Thread.sleep(110);
+        Thread.sleep(110); //NOSONAR
         
         // Verify refresh is needed
         assertTrue(schemaCache.needsRefresh(100), "Should need refresh after interval");
@@ -107,7 +107,8 @@ class SchemaRefreshIntegrationTest {
         DataSource slowDataSource = mock(DataSource.class);
         try {
             when(slowDataSource.getConnection()).thenAnswer(invocation -> {
-                Thread.sleep(100000); // Very long delay
+                // Very long delay
+                Thread.sleep(100000); //NOSONAR
                 return null;
             });
         } catch (Exception e) {
