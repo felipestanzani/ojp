@@ -503,7 +503,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      * Handles an existing prepared statement with LOB streams.
      */
     private void handleExistingPreparedStatement(ConnectionSessionDTO dto,
-                                                 List<Parameter> params, PreparedStatement ps) throws SQLException {
+            List<Parameter> params, PreparedStatement ps) throws SQLException {
         processLobStreams(dto, ps);
         if (ps != null) {
             ParameterHandler.addParametersPreparedStatement(sessionManager, dto.getSession(), ps, params);
@@ -608,9 +608,9 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      */
     private void cleanupResources(ConnectionSessionDTO dto, Statement stmt) {
         if ((dto.getSession() == null || StringUtils.isEmpty(dto.getSession().getSessionUUID())) && stmt != null) {
-                closeStatement(stmt);
-                closeConnection(stmt);
-            }
+            closeStatement(stmt);
+            closeConnection(stmt);
+        }
 
     }
 
