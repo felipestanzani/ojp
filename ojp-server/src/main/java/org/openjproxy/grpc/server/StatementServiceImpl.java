@@ -1,6 +1,38 @@
 package org.openjproxy.grpc.server;
 
-import com.openjproxy.grpc.*;
+import com.openjproxy.grpc.CallResourceRequest;
+import com.openjproxy.grpc.CallResourceResponse;
+import com.openjproxy.grpc.ConnectionDetails;
+import com.openjproxy.grpc.DbName;
+import com.openjproxy.grpc.LobDataBlock;
+import com.openjproxy.grpc.LobReference;
+import com.openjproxy.grpc.OpResult;
+import com.openjproxy.grpc.ReadLobRequest;
+import com.openjproxy.grpc.ResultSetFetchRequest;
+import com.openjproxy.grpc.ResultType;
+import com.openjproxy.grpc.SessionInfo;
+import com.openjproxy.grpc.SessionTerminationStatus;
+import com.openjproxy.grpc.SqlErrorType;
+import com.openjproxy.grpc.StatementRequest;
+import com.openjproxy.grpc.StatementServiceGrpc;
+import com.openjproxy.grpc.TransactionInfo;
+import com.openjproxy.grpc.TransactionStatus;
+import com.openjproxy.grpc.XaCommitRequest;
+import com.openjproxy.grpc.XaEndRequest;
+import com.openjproxy.grpc.XaForgetRequest;
+import com.openjproxy.grpc.XaGetTransactionTimeoutRequest;
+import com.openjproxy.grpc.XaGetTransactionTimeoutResponse;
+import com.openjproxy.grpc.XaIsSameRMRequest;
+import com.openjproxy.grpc.XaIsSameRMResponse;
+import com.openjproxy.grpc.XaPrepareRequest;
+import com.openjproxy.grpc.XaPrepareResponse;
+import com.openjproxy.grpc.XaRecoverRequest;
+import com.openjproxy.grpc.XaRecoverResponse;
+import com.openjproxy.grpc.XaResponse;
+import com.openjproxy.grpc.XaRollbackRequest;
+import com.openjproxy.grpc.XaSetTransactionTimeoutRequest;
+import com.openjproxy.grpc.XaSetTransactionTimeoutResponse;
+import com.openjproxy.grpc.XaStartRequest;
 import com.zaxxer.hikari.HikariDataSource;
 import io.grpc.stub.StreamObserver;
 import lombok.Builder;
@@ -16,21 +48,33 @@ import org.openjproxy.grpc.dto.OpQueryResult;
 import org.openjproxy.grpc.dto.Parameter;
 import org.openjproxy.grpc.server.action.ActionContext;
 import org.openjproxy.grpc.server.action.connection.ConnectAction;
+import org.openjproxy.grpc.server.action.resource.CallResourceAction;
+import org.openjproxy.grpc.server.action.session.TerminateSessionAction;
 import org.openjproxy.grpc.server.action.streaming.CreateLobAction;
 import org.openjproxy.grpc.server.action.streaming.ReadLobAction;
-import org.openjproxy.grpc.server.action.transaction.*;
+import org.openjproxy.grpc.server.action.transaction.CommitTransactionAction;
+import org.openjproxy.grpc.server.action.transaction.RollbackTransactionAction;
+import org.openjproxy.grpc.server.action.transaction.XaForgetAction;
+import org.openjproxy.grpc.server.action.transaction.XaGetTransactionTimeoutAction;
+import org.openjproxy.grpc.server.action.transaction.XaIsSameRMAction;
+import org.openjproxy.grpc.server.action.transaction.XaSetTransactionTimeoutAction;
+import org.openjproxy.grpc.server.action.xa.XaCommitAction;
+import org.openjproxy.grpc.server.action.xa.XaEndAction;
+import org.openjproxy.grpc.server.action.xa.XaPrepareAction;
+import org.openjproxy.grpc.server.action.xa.XaRecoverAction;
+import org.openjproxy.grpc.server.action.xa.XaRollbackAction;
+import org.openjproxy.grpc.server.action.xa.XaStartAction;
 import org.openjproxy.grpc.server.lob.LobProcessor;
 import org.openjproxy.grpc.server.pool.ConnectionPoolConfigurer;
 import org.openjproxy.grpc.server.resultset.ResultSetWrapper;
 import org.openjproxy.grpc.server.sql.SqlEnhancementResult;
 import org.openjproxy.grpc.server.sql.SqlEnhancerEngine;
+import org.openjproxy.grpc.server.sql.SqlSessionAffinityDetector;
 import org.openjproxy.grpc.server.statement.ParameterHandler;
 import org.openjproxy.grpc.server.statement.StatementFactory;
 import org.openjproxy.grpc.server.utils.DateTimeUtils;
 import org.openjproxy.grpc.server.utils.SessionInfoUtils;
 import org.openjproxy.grpc.server.utils.StatementRequestValidator;
-import org.openjproxy.grpc.server.sql.SqlSessionAffinityDetector;
-import org.openjproxy.grpc.server.action.xa.XaStartAction;
 import org.openjproxy.xa.pool.XATransactionRegistry;
 import org.openjproxy.xa.pool.spi.XAConnectionPoolProvider;
 
@@ -38,7 +82,16 @@ import javax.sql.DataSource;
 import javax.sql.XAConnection;
 import javax.sql.XADataSource;
 import java.io.InputStream;
-import java.sql.*;
+import java.sql.Clob;
+import java.sql.Connection;
+import java.sql.Date;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLDataException;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.sql.Types;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -50,14 +103,6 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.openjproxy.grpc.server.GrpcExceptionHandler.sendSQLExceptionMetadata;
-
-import org.openjproxy.grpc.server.action.xa.XaEndAction;
-import org.openjproxy.grpc.server.action.session.TerminateSessionAction;
-import org.openjproxy.grpc.server.action.resource.CallResourceAction;
-import org.openjproxy.grpc.server.action.xa.XaPrepareAction;
-import org.openjproxy.grpc.server.action.xa.XaCommitAction;
-import org.openjproxy.grpc.server.action.xa.XaRollbackAction;
-import org.openjproxy.grpc.server.action.xa.XaRecoverAction;
 
 @Slf4j
 public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceImplBase {
@@ -124,7 +169,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
     /**
      * Updates the last activity time for the session to prevent premature cleanup.
-     * This should be called at the beginning of any method that operates on a session.
+     * This should be called at the beginning of any method that operates on a
+     * session.
      *
      * @param sessionInfo the session information
      */
@@ -315,10 +361,10 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     @Override
     public void executeUpdate(StatementRequest request, StreamObserver<OpResult> responseObserver) {
         log.info("Executing update {}", request.getSql());
-        
+
         // Update session activity
         updateSessionActivity(request.getSession());
-        
+
         String stmtHash = SqlStatementXXHash.hashSqlQuery(request.getSql());
 
         // Process cluster health from the request
@@ -367,29 +413,19 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         ConnectionSessionDTO dto = ConnectionSessionDTO.builder().build();
 
         try {
-            dto = initializeSessionConnection(request);
-            SessionInfo returnSessionInfo = dto.getSession();
-
-            List<Parameter> params = ProtoConverter.fromProtoList(request.getParametersList());
-            
-            if (shouldUsePreparedStatement(params, request, dto)) {
-                UpdateExecutionResult result = executePreparedStatementUpdate(request, dto, params);
-                stmt = result.getStatement();
-                return buildUpdateResult(request, result, returnSessionInfo);
-            } else {
-                UpdateExecutionResult result = executeRegularStatementUpdate(request, dto);
-                stmt = result.getStatement();
-                return buildUpdateResult(request, result, returnSessionInfo);
-            }
+            dto = prepareSessionConnection(request);
+            UpdateExecutionResult result = executeUpdateOperation(request, dto);
+            stmt = result.getStatement();
+            return buildUpdateResult(result, dto.getSession());
         } finally {
             cleanupResources(dto, stmt);
         }
     }
 
     /**
-     * Initializes the session connection for the update operation.
+     * Prepares the session connection for update execution.
      */
-    private ConnectionSessionDTO initializeSessionConnection(StatementRequest request) throws SQLException {
+    private ConnectionSessionDTO prepareSessionConnection(StatementRequest request) throws SQLException {
         boolean requiresSessionAffinity = SqlSessionAffinityDetector.requiresSessionAffinity(request.getSql());
         boolean needsSession = StatementRequestValidator.isAddBatchOperation(request)
                 || StatementRequestValidator.hasAutoGeneratedKeysFlag(request)
@@ -398,152 +434,201 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     }
 
     /**
-     * Determines if a prepared statement should be used based on parameters and request.
+     * Executes the update operation and returns the result.
      */
-    private boolean shouldUsePreparedStatement(List<Parameter> params, StatementRequest request, ConnectionSessionDTO dto) {
-        if (CollectionUtils.isNotEmpty(params)) {
-            return true;
-        }
-        return dto.getSession() != null 
-                && StringUtils.isNotBlank(dto.getSession().getSessionUUID())
-                && StringUtils.isNoneBlank(request.getStatementUUID());
-    }
+    private UpdateExecutionResult executeUpdateOperation(StatementRequest request, ConnectionSessionDTO dto)
+            throws SQLException {
+        List<Parameter> params = ProtoConverter.fromProtoList(request.getParametersList());
+        PreparedStatement ps = getExistingPreparedStatement(request, dto);
 
-    /**
-     * Handles LOB parameters for a prepared statement.
-     */
-    private void handleLobParameters(PreparedStatement ps, ConnectionSessionDTO dto, SessionInfo session) throws SQLException {
-        if (ps == null) {
-            return;
-        }
-
-        Collection<Object> lobs = sessionManager.getLobs(session);
-        for (Object o : lobs) {
-            LobDataBlocksInputStream lobIS = (LobDataBlocksInputStream) o;
-            @SuppressWarnings("unchecked")
-            Map<String, Object> metadata = (Map<String, Object>) sessionManager.getAttr(session, lobIS.getUuid());
-            Integer parameterIndex = (Integer) metadata
-                    .get(String.valueOf(CommonConstants.PREPARED_STATEMENT_BINARY_STREAM_INDEX));
-            ps.setBinaryStream(parameterIndex, lobIS);
-        }
-
-        if (DbName.POSTGRES.equals(dto.getDbName())) {
-            sessionManager.waitLobStreamsConsumption(session);
-        }
-    }
-
-    /**
-     * Gets an existing prepared statement or creates a new one.
-     */
-    private PreparedStatement getOrCreatePreparedStatement(StatementRequest request, ConnectionSessionDTO dto, 
-            List<Parameter> params, OpResult.Builder opResultBuilder) throws SQLException {
-        if (StringUtils.isNotEmpty(request.getStatementUUID())) {
-            return sessionManager.getPreparedStatement(dto.getSession(), request.getStatementUUID());
+        if (shouldUsePreparedStatement(params, ps)) {
+            return executePreparedStatementUpdate(request, dto, params, ps);
         } else {
-            PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, request.getSql(), params, request);
-            if (StatementRequestValidator.hasAutoGeneratedKeysFlag(request)) {
-                String psNewUUID = sessionManager.registerPreparedStatement(dto.getSession(), ps);
-                opResultBuilder.setUuid(psNewUUID);
-            }
-            return ps;
+            return executeRegularStatementUpdate(request, dto);
         }
     }
 
     /**
-     * Executes an update using a prepared statement.
+     * Gets an existing prepared statement if available.
      */
-    private UpdateExecutionResult executePreparedStatementUpdate(StatementRequest request, ConnectionSessionDTO dto, 
-            List<Parameter> params) throws SQLException {
-        OpResult.Builder opResultBuilder = OpResult.newBuilder();
-        PreparedStatement ps = getOrCreatePreparedStatement(request, dto, params, opResultBuilder);
-
-        if (StringUtils.isNotEmpty(request.getStatementUUID())) {
-            handleLobParameters(ps, dto, dto.getSession());
-            if (ps != null) {
-                ParameterHandler.addParametersPreparedStatement(sessionManager, dto.getSession(), ps, params);
-            }
+    private PreparedStatement getExistingPreparedStatement(StatementRequest request, ConnectionSessionDTO dto) {
+        if (dto.getSession() == null || StringUtils.isBlank(dto.getSession().getSessionUUID())) {
+            return null;
         }
+        if (StringUtils.isBlank(request.getStatementUUID())) {
+            return null;
+        }
+        return sessionManager.getPreparedStatement(dto.getSession(), request.getStatementUUID());
+    }
 
+    /**
+     * Determines if prepared statement should be used.
+     */
+    private boolean shouldUsePreparedStatement(List<Parameter> params, PreparedStatement ps) {
+        return CollectionUtils.isNotEmpty(params) || ps != null;
+    }
+
+    /**
+     * Executes update using a prepared statement.
+     */
+    private UpdateExecutionResult executePreparedStatementUpdate(StatementRequest request, ConnectionSessionDTO dto,
+            List<Parameter> params, PreparedStatement ps) throws SQLException {
+        OpResult.Builder opResultBuilder = OpResult.newBuilder();
         String psUUID = "";
         int updated = 0;
+        boolean isBatchOperation = StatementRequestValidator.isAddBatchOperation(request);
 
-        if (StatementRequestValidator.isAddBatchOperation(request)) {
-            if (ps != null) {
-                ps.addBatch();
-            }
-            psUUID = request.getStatementUUID().isBlank() 
-                    ? sessionManager.registerPreparedStatement(dto.getSession(), ps)
-                    : request.getStatementUUID();
+        if (StringUtils.isNotEmpty(request.getStatementUUID())) {
+            handleExistingPreparedStatement(dto, params, ps);
         } else {
-            updated = ps != null ? ps.executeUpdate() : 0;
+            ps = createNewPreparedStatement(request, dto, params, opResultBuilder);
+        }
+
+        if (isBatchOperation) {
+            psUUID = executeBatchOperation(request, dto, ps);
+        } else {
+            updated = executeUpdateOnPreparedStatement(ps);
         }
 
         return UpdateExecutionResult.builder()
                 .statement(ps)
                 .updated(updated)
                 .psUUID(psUUID)
+                .isBatchOperation(isBatchOperation)
                 .opResultBuilder(opResultBuilder)
                 .build();
     }
 
     /**
-     * Executes an update using a regular statement.
+     * Handles an existing prepared statement with LOB streams.
      */
-    private UpdateExecutionResult executeRegularStatementUpdate(StatementRequest request, ConnectionSessionDTO dto) 
+    private void handleExistingPreparedStatement(ConnectionSessionDTO dto,
+                                                 List<Parameter> params, PreparedStatement ps) throws SQLException {
+        processLobStreams(dto, ps);
+        if (ps != null) {
+            ParameterHandler.addParametersPreparedStatement(sessionManager, dto.getSession(), ps, params);
+        }
+    }
+
+    /**
+     * Creates a new prepared statement.
+     */
+    private PreparedStatement createNewPreparedStatement(StatementRequest request, ConnectionSessionDTO dto,
+            List<Parameter> params, OpResult.Builder opResultBuilder) throws SQLException {
+        PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, request.getSql(), params,
+                request);
+        if (StatementRequestValidator.hasAutoGeneratedKeysFlag(request)) {
+            String psNewUUID = sessionManager.registerPreparedStatement(dto.getSession(), ps);
+            opResultBuilder.setUuid(psNewUUID);
+        }
+        return ps;
+    }
+
+    /**
+     * Processes LOB streams for prepared statement.
+     */
+    private void processLobStreams(ConnectionSessionDTO dto, PreparedStatement ps) throws SQLException {
+        Collection<Object> lobs = sessionManager.getLobs(dto.getSession());
+        for (Object o : lobs) {
+            LobDataBlocksInputStream lobIS = (LobDataBlocksInputStream) o;
+            @SuppressWarnings("unchecked")
+            Map<String, Object> metadata = (Map<String, Object>) sessionManager.getAttr(dto.getSession(),
+                    lobIS.getUuid());
+            Integer parameterIndex = (Integer) metadata
+                    .get(String.valueOf(CommonConstants.PREPARED_STATEMENT_BINARY_STREAM_INDEX));
+            if (ps != null) {
+                ps.setBinaryStream(parameterIndex, lobIS);
+            }
+        }
+        if (DbName.POSTGRES.equals(dto.getDbName())) {
+            sessionManager.waitLobStreamsConsumption(dto.getSession());
+        }
+    }
+
+    /**
+     * Executes batch operation on prepared statement.
+     */
+    private String executeBatchOperation(StatementRequest request, ConnectionSessionDTO dto, PreparedStatement ps)
+            throws SQLException {
+        if (ps != null) {
+            ps.addBatch();
+        }
+        if (request.getStatementUUID().isBlank()) {
+            return sessionManager.registerPreparedStatement(dto.getSession(), ps);
+        } else {
+            return request.getStatementUUID();
+        }
+    }
+
+    /**
+     * Executes update on prepared statement.
+     */
+    private int executeUpdateOnPreparedStatement(PreparedStatement ps) throws SQLException {
+        return ps != null ? ps.executeUpdate() : 0;
+    }
+
+    /**
+     * Executes update using a regular statement.
+     */
+    private UpdateExecutionResult executeRegularStatementUpdate(StatementRequest request, ConnectionSessionDTO dto)
             throws SQLException {
         Statement stmt = StatementFactory.createStatement(sessionManager, dto.getConnection(), request);
         int updated = stmt.executeUpdate(request.getSql());
-        
         return UpdateExecutionResult.builder()
                 .statement(stmt)
                 .updated(updated)
                 .psUUID("")
+                .isBatchOperation(false)
                 .opResultBuilder(OpResult.newBuilder())
                 .build();
     }
 
     /**
-     * Builds the operation result from the execution result.
+     * Builds the update result.
      */
-    private OpResult buildUpdateResult(StatementRequest request, UpdateExecutionResult result, SessionInfo returnSessionInfo) {
+    private OpResult buildUpdateResult(UpdateExecutionResult result, SessionInfo sessionInfo) {
         OpResult.Builder builder = result.getOpResultBuilder();
-        
-        if (StatementRequestValidator.isAddBatchOperation(request)) {
+        if (result.isBatchOperation()) {
             return builder
                     .setType(ResultType.UUID_STRING)
-                    .setSession(returnSessionInfo)
+                    .setSession(sessionInfo)
                     .setUuidValue(result.getPsUUID())
                     .build();
+        } else {
+            return builder
+                    .setType(ResultType.INTEGER)
+                    .setSession(sessionInfo)
+                    .setIntValue(result.getUpdated())
+                    .build();
         }
-        
-        return builder
-                .setType(ResultType.INTEGER)
-                .setSession(returnSessionInfo)
-                .setIntValue(result.getUpdated())
-                .build();
     }
 
     /**
-     * Cleans up resources (statement and connection) if no session exists.
+     * Cleans up resources if no session exists.
      */
     private void cleanupResources(ConnectionSessionDTO dto, Statement stmt) {
-        if (stmt == null) {
-            return;
-        }
-        
-        boolean shouldCleanup = dto.getSession() == null 
-                || StringUtils.isEmpty(dto.getSession().getSessionUUID());
-        
-        if (!shouldCleanup) {
-            return;
-        }
+        if ((dto.getSession() == null || StringUtils.isEmpty(dto.getSession().getSessionUUID())) && stmt != null) {
+                closeStatement(stmt);
+                closeConnection(stmt);
+            }
 
+    }
+
+    /**
+     * Closes the statement safely.
+     */
+    private void closeStatement(Statement stmt) {
         try {
             stmt.close();
         } catch (SQLException e) {
             log.error("Failure closing statement: {}", e.getMessage(), e);
         }
-        
+    }
+
+    /**
+     * Closes the connection safely.
+     */
+    private void closeConnection(Statement stmt) {
         try {
             stmt.getConnection().close();
         } catch (SQLException e) {
@@ -560,16 +645,17 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         private Statement statement;
         private int updated;
         private String psUUID;
+        private boolean isBatchOperation;
         private OpResult.Builder opResultBuilder;
     }
 
     @Override
     public void executeQuery(StatementRequest request, StreamObserver<OpResult> responseObserver) {
         log.info("Executing query for {}", request.getSql());
-        
+
         // Update session activity
         updateSessionActivity(request.getSession());
-        
+
         String stmtHash = SqlStatementXXHash.hashSqlQuery(request.getSql());
 
         // Process cluster health from the request
@@ -637,7 +723,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
         if (CollectionUtils.isNotEmpty(params)) {
 
-            try (PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, sql, params, request)) {
+            try (PreparedStatement ps = StatementFactory.createPreparedStatement(sessionManager, dto, sql, params,
+                    request)) {
                 resultSetUUID = this.sessionManager.registerResultSet(dto.getSession(), ps.executeQuery());
                 this.handleResultSet(dto.getSession(), resultSetUUID, responseObserver);
             }
@@ -760,7 +847,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      * Validates the connection and sets the database name on the DTO builder.
      *
      * @param sessionInfo the session information
-     * @param dtoBuilder   the DTO builder to update
+     * @param dtoBuilder  the DTO builder to update
      * @return the connection from the existing session
      * @throws SQLException if connection not found or closed
      */
@@ -781,11 +868,11 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      * Creates an unpooled XA connection from the XADataSource.
      * Registers the XAConnection as a session attribute for XA operations.
      *
-     * @param sessionInfo     the session information
-     * @param connHash        the connection hash
-     * @param xaDataSource    the XA data source
+     * @param sessionInfo        the session information
+     * @param connHash           the connection hash
+     * @param xaDataSource       the XA data source
      * @param startSessionIfNone if true, creates a session if none exists
-     * @param dtoBuilder      the DTO builder to update
+     * @param dtoBuilder         the DTO builder to update
      * @return the connection from the XA connection
      * @throws SQLException if connection creation fails
      */
@@ -965,9 +1052,9 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      */
     private boolean requiresRowByRowMode(DbName dbName, int colType) {
         return (DbName.SQL_SERVER.equals(dbName) || DbName.DB2.equals(dbName))
-                && (colType == Types.VARBINARY || colType == Types.BLOB 
-                    || colType == Types.LONGVARBINARY || colType == Types.CLOB 
-                    || colType == Types.BINARY);
+                && (colType == Types.VARBINARY || colType == Types.BLOB
+                        || colType == Types.LONGVARBINARY || colType == Types.CLOB
+                        || colType == Types.BINARY);
     }
 
     /**
@@ -988,8 +1075,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     /**
      * Processes a VARBINARY column value.
      */
-    private Object processVarbinaryColumn(ResultSet rs, int columnIndex, DbName dbName, 
-                                         SessionInfo session, String colTypeName, String[] resultSetMode) throws SQLException {
+    private Object processVarbinaryColumn(ResultSet rs, int columnIndex, DbName dbName,
+            SessionInfo session, String colTypeName, String[] resultSetMode) throws SQLException {
         if (requiresRowByRowMode(dbName, Types.VARBINARY)) {
             resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
         }
@@ -1003,8 +1090,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     /**
      * Processes a BLOB or LONGVARBINARY column value.
      */
-    private Object processBlobColumn(ResultSet rs, int columnIndex, DbName dbName, 
-                                     SessionInfo session, int colType, String[] resultSetMode) throws SQLException {
+    private Object processBlobColumn(ResultSet rs, int columnIndex, DbName dbName,
+            SessionInfo session, int colType, String[] resultSetMode) throws SQLException {
         if (requiresRowByRowMode(dbName, colType)) {
             resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
         }
@@ -1014,8 +1101,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     /**
      * Processes a CLOB column value.
      */
-    private Object processClobColumn(ResultSet rs, int columnIndex, DbName dbName, 
-                                    SessionInfo session, String[] resultSetMode) throws SQLException {
+    private Object processClobColumn(ResultSet rs, int columnIndex, DbName dbName,
+            SessionInfo session, String[] resultSetMode) throws SQLException {
         if (requiresRowByRowMode(dbName, Types.CLOB)) {
             resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
         }
@@ -1033,8 +1120,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     /**
      * Processes a BINARY column value.
      */
-    private Object processBinaryColumn(ResultSet rs, int columnIndex, DbName dbName, 
-                                      SessionInfo session, String[] resultSetMode) throws SQLException {
+    private Object processBinaryColumn(ResultSet rs, int columnIndex, DbName dbName,
+            SessionInfo session, String[] resultSetMode) throws SQLException {
         if (requiresRowByRowMode(dbName, Types.BINARY)) {
             resultSetMode[0] = CommonConstants.RESULT_SET_ROW_BY_ROW_MODE;
         }
@@ -1055,7 +1142,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     /**
      * Processes a default column value (handles special cases like DateTimeOffset).
      */
-    private Object processDefaultColumn(ResultSet rs, int columnIndex, String colTypeName, int colType) throws SQLException {
+    private Object processDefaultColumn(ResultSet rs, int columnIndex, String colTypeName, int colType)
+            throws SQLException {
         Object currentValue = rs.getObject(columnIndex + 1);
         // com.microsoft.sqlserver.jdbc.DateTimeOffset special case as per it does not
         // implement any standard java.sql interface.
@@ -1069,15 +1157,17 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      * Processes a single column value based on its SQL type.
      * Updates resultSetMode array if row-by-row mode is needed.
      */
-    private Object processColumnValue(ResultSet rs, int columnIndex, DbName dbName, 
-                                     SessionInfo session, String[] resultSetMode) throws SQLException {
+    private Object processColumnValue(ResultSet rs, int columnIndex, DbName dbName,
+            SessionInfo session, String[] resultSetMode) throws SQLException {
         int colType = rs.getMetaData().getColumnType(columnIndex + 1);
         String colTypeName = rs.getMetaData().getColumnTypeName(columnIndex + 1);
-        
+
         // Postgres uses type BYTEA which translates to type VARBINARY
         return switch (colType) {
-            case Types.VARBINARY -> processVarbinaryColumn(rs, columnIndex, dbName, session, colTypeName, resultSetMode);
-            case Types.BLOB, Types.LONGVARBINARY -> processBlobColumn(rs, columnIndex, dbName, session, colType, resultSetMode);
+            case Types.VARBINARY ->
+                processVarbinaryColumn(rs, columnIndex, dbName, session, colTypeName, resultSetMode);
+            case Types.BLOB, Types.LONGVARBINARY ->
+                processBlobColumn(rs, columnIndex, dbName, session, colType, resultSetMode);
             case Types.CLOB -> processClobColumn(rs, columnIndex, dbName, session, resultSetMode);
             case Types.BINARY -> processBinaryColumn(rs, columnIndex, dbName, session, resultSetMode);
             case Types.DATE -> processDateColumn(rs, columnIndex, colTypeName);
@@ -1090,8 +1180,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
      * Processes all columns in a single row from the result set.
      * Updates resultSetMode array if row-by-row mode is needed.
      */
-    private Object[] processRow(ResultSet rs, int columnCount, DbName dbName, 
-                                SessionInfo session, String[] resultSetMode) throws SQLException {
+    private Object[] processRow(ResultSet rs, int columnCount, DbName dbName,
+            SessionInfo session, String[] resultSetMode) throws SQLException {
         Object[] rowValues = new Object[columnCount];
         for (int i = 0; i < columnCount; i++) {
             rowValues[i] = processColumnValue(rs, i, dbName, session, resultSetMode);
@@ -1100,14 +1190,15 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
     }
 
     /**
-     * Sends a result block to the response observer and returns a new builder for the next block.
+     * Sends a result block to the response observer and returns a new builder for
+     * the next block.
      */
-    private OpQueryResult.OpQueryResultBuilder sendResultBlock(SessionInfo session, 
-                                                               List<Object[]> results,
-                                                               OpQueryResult.OpQueryResultBuilder queryResultBuilder,
-                                                               String resultSetUUID, 
-                                                               String resultSetMode,
-                                                               StreamObserver<OpResult> responseObserver) {
+    private OpQueryResult.OpQueryResultBuilder sendResultBlock(SessionInfo session,
+            List<Object[]> results,
+            OpQueryResult.OpQueryResultBuilder queryResultBuilder,
+            String resultSetUUID,
+            String resultSetMode,
+            StreamObserver<OpResult> responseObserver) {
         responseObserver.onNext(ResultSetWrapper.wrapResults(session, results, queryResultBuilder,
                 resultSetUUID, resultSetMode));
         // Recreate the builder to not send labels in every block.
@@ -1132,7 +1223,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         // Only used if result set contains LOBs in SQL Server and DB2 (if LOB's
         // present), so cursor is not read in advance,
         // every row has to be requested by the JDBC client.
-        String[] resultSetMode = {""};
+        String[] resultSetMode = { "" };
         boolean resultSetMetadataCollected = false;
 
         while (rs.next()) {
@@ -1142,7 +1233,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
             }
             justSent = false;
             row++;
-            
+
             Object[] rowValues = processRow(rs, columnCount, dbName, session, resultSetMode);
             results.add(rowValues);
 
@@ -1161,7 +1252,8 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
         if (!justSent) {
             // Send a block of remaining records
             responseObserver.onNext(
-                    ResultSetWrapper.wrapResults(session, results, queryResultBuilder, resultSetUUID, resultSetMode[0]));
+                    ResultSetWrapper.wrapResults(session, results, queryResultBuilder, resultSetUUID,
+                            resultSetMode[0]));
         }
 
         responseObserver.onCompleted();
@@ -1177,58 +1269,58 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
     @Override
     public void xaStart(XaStartRequest request,
-                        StreamObserver<XaResponse> responseObserver) {
+            StreamObserver<XaResponse> responseObserver) {
         XaStartAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaEnd(XaEndRequest request,
-                      StreamObserver<XaResponse> responseObserver) {
+            StreamObserver<XaResponse> responseObserver) {
         XaEndAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaPrepare(XaPrepareRequest request,
-                          StreamObserver<XaPrepareResponse> responseObserver) {
+            StreamObserver<XaPrepareResponse> responseObserver) {
         XaPrepareAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaCommit(XaCommitRequest request,
-                         StreamObserver<XaResponse> responseObserver) {
+            StreamObserver<XaResponse> responseObserver) {
         XaCommitAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaRollback(XaRollbackRequest request,
-                           StreamObserver<XaResponse> responseObserver) {
+            StreamObserver<XaResponse> responseObserver) {
         XaRollbackAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaRecover(XaRecoverRequest request,
-                          StreamObserver<XaRecoverResponse> responseObserver) {
+            StreamObserver<XaRecoverResponse> responseObserver) {
         XaRecoverAction.getInstance().execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaForget(XaForgetRequest request,
-                         StreamObserver<XaResponse> responseObserver) {
+            StreamObserver<XaResponse> responseObserver) {
         XaForgetAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaSetTransactionTimeout(XaSetTransactionTimeoutRequest request,
-                                        StreamObserver<XaSetTransactionTimeoutResponse> responseObserver) {
+            StreamObserver<XaSetTransactionTimeoutResponse> responseObserver) {
         XaSetTransactionTimeoutAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
 
     @Override
     public void xaGetTransactionTimeout(XaGetTransactionTimeoutRequest request,
-                                        StreamObserver<XaGetTransactionTimeoutResponse> responseObserver) {
+            StreamObserver<XaGetTransactionTimeoutResponse> responseObserver) {
         XaGetTransactionTimeoutAction.getInstance()
                 .execute(actionContext, request, responseObserver);
 
@@ -1236,7 +1328,7 @@ public class StatementServiceImpl extends StatementServiceGrpc.StatementServiceI
 
     @Override
     public void xaIsSameRM(XaIsSameRMRequest request,
-                           StreamObserver<XaIsSameRMResponse> responseObserver) {
+            StreamObserver<XaIsSameRMResponse> responseObserver) {
         XaIsSameRMAction.getInstance()
                 .execute(actionContext, request, responseObserver);
     }
