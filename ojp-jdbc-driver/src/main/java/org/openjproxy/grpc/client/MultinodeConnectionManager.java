@@ -479,6 +479,7 @@ public class MultinodeConnectionManager {
         SQLException lastException = null;
         int successfulConnections = 0;
         List<ServerEndpoint> connectedServers = new ArrayList<>();
+        List<SessionInfo> allSessionInfos = new ArrayList<>(); // Track all successful sessions
         boolean isXA = connectionDetails.getIsXA();
         
         // Try to connect to all servers
@@ -542,6 +543,9 @@ public class MultinodeConnectionManager {
                 // Track that this server received a connect() call
                 connectedServers.add(server);
                 
+                // Track all successful session infos
+                allSessionInfos.add(sessionInfo);
+                
                 // Use the first successful connection as the primary
                 if (primarySessionInfo == null) {
                     primarySessionInfo = sessionInfo;
@@ -564,6 +568,34 @@ public class MultinodeConnectionManager {
         if (primarySessionInfo == null) {
             throw new SQLException("Failed to connect to any server. " +
                     "Last error: " + (lastException != null ? lastException.getMessage() : "No healthy servers available"));
+        }
+        
+        // CRITICAL FIX: Check if primary session was invalidated by health checker during connect
+        // This can happen if health checker runs between binding the session and returning from connect()
+        String primarySessionUUID = primarySessionInfo.getSessionUUID();
+        if (primarySessionUUID != null && !primarySessionUUID.isEmpty()) {
+            if (!sessionToServerMap.containsKey(primarySessionUUID)) {
+                log.warn("[RACE-FIX] Primary session {} was invalidated during connect(), searching for valid session", 
+                        primarySessionUUID);
+                
+                // Find a valid session from the other successful connections
+                SessionInfo validSession = null;
+                for (SessionInfo si : allSessionInfos) {
+                    String uuid = si.getSessionUUID();
+                    if (uuid != null && !uuid.isEmpty() && sessionToServerMap.containsKey(uuid)) {
+                        validSession = si;
+                        log.info("[RACE-FIX] Found valid session {} to use instead", uuid);
+                        break;
+                    }
+                }
+                
+                if (validSession != null) {
+                    primarySessionInfo = validSession;
+                } else {
+                    // All sessions were invalidated - this is a rare case but possible
+                    throw new SQLException("All sessions were invalidated during connection establishment (servers failed during connect)");
+                }
+            }
         }
         
         // Track which servers received connect() for this connection hash

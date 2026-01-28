@@ -74,9 +74,6 @@ public class OjpXAConnection implements XAConnection, ServerHealthListener {
     /**
      * Lazily create the server-side session when first needed.
      * This avoids creating sessions that may never be used.
-     * 
-     * CRITICAL FIX: Verify session is still valid after creation to handle race condition
-     * where health checker invalidates session during connect().
      */
     private SessionInfo getOrCreateSession() throws SQLException {
         if (sessionInfo != null) {
@@ -120,25 +117,11 @@ public class OjpXAConnection implements XAConnection, ServerHealthListener {
             }
 
             SessionInfo newSessionInfo = statementService.connect(connBuilder.build());
-            String newBoundServer = newSessionInfo.getTargetServer();
             
-            // CRITICAL FIX: After getting session, verify the target server is still healthy
-            // This handles the race condition where server goes down during connect()
-            if (statementService instanceof MultinodeStatementService && newBoundServer != null && !newBoundServer.isEmpty()) {
-                MultinodeConnectionManager connectionManager = ((MultinodeStatementService) statementService).getConnectionManager();
-                
-                // Check if the session is still in the session map (health checker might have removed it)
-                boolean sessionStillValid = connectionManager.isSessionBound(newSessionInfo.getSessionUUID());
-                
-                if (!sessionStillValid) {
-                    log.warn("[RACE-FIX] Session {} was invalidated during connect() (health checker removed it), discarding", 
-                            newSessionInfo.getSessionUUID());
-                    throw new SQLException("Session was invalidated during connection establishment (server failed during connect)");
-                }
-            }
-            
-            // Session is valid, assign it
+            // Session validation is now handled inside MultinodeConnectionManager.connectToAllServers()
+            // which checks if the primary session was invalidated and returns a valid session instead
             this.sessionInfo = newSessionInfo;
+            String newBoundServer = newSessionInfo.getTargetServer();
             this.boundServerAddress = newBoundServer;
             
             if (boundServerAddress != null && !boundServerAddress.isEmpty()) {
